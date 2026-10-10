@@ -12,6 +12,7 @@ Built with TypeScript, Three.js and Vite. The city, people and sound are made in
 - **Busy roads:** saloons, yellow taxis, vans, pickups, jeeps, box trucks and refuse trucks, with luxury SUVs, sports coupés, electric cars and the odd race car showing up more on posh roads like Lekki.
 - **Living Lagos:** an in-game clock from dawn to night (streetlights, lit windows, headlights), harmattan haze in season, rain showers with slippery brakes, market stretches with stalls, people crossing and hawkers on the lane lines, and Independence Day bunting on 1 October.
 - **Passengers with personalities:** market women whose basins take two seats, students, office workers who tip if you are on time, preachers who protect your streak, Baba who doubles his fare for a smooth ride, hawkers who sell to your passengers, and owambe guests at night.
+- **Rival danfos:** now and then another danfo (with its driver's name above it) races you to the next stop. Park in the bay first to keep the passengers and earn a bonus; let it load first and it carries them off.
 - **Conductor and money:** give exact change from ₦50–₦500 notes for tips, buy fuel at filling stations, pay the Lekki toll, avoid warden and BRT camera fines.
 - **Progression:** missions, levels, a daily bonus, weekday events (Church Sunday, Monday Rush, Harmattan Tuesday, Market Wednesday, Fuel Queue Thursday, Owambe Friday, Rainy Saturday), and a garage with cars, paint jobs, rear stickers, horns and upgrades. Danfo fares and race prizes go into the same bank. Progress is saved in the browser.
 

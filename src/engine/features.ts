@@ -196,9 +196,9 @@ export function makeRaceGate(word: 'START' | 'FINISH'): THREE.Group {
 }
 
 /** Name tag that floats above a racer or rival; dispose it when the race ends. */
-export function makeNameTag(name: string, color: string, height: number): THREE.Sprite {
+export function makeNameTag(name: string, color: string, height: number, width = 1.9): THREE.Sprite {
   const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTagTexture(name, color) }));
-  tag.scale.set(1.9, 0.53, 1);
+  tag.scale.set(width, width * 0.28, 1);
   tag.position.y = height + 0.75;
   tag.name = 'nametag';
   return tag;

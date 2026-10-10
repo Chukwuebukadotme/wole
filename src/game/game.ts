@@ -16,6 +16,8 @@ import {
   PAINTS,
   PAX,
   PAX_KINDS,
+  RIVALS,
+  RIVAL_CALLS,
   ROUTES,
   STICKERS,
   TUNING,
@@ -56,7 +58,7 @@ import { clamp, clockText, lerp, metres, mod, money, mulberry32, pick, rand, wei
 import { ChangePanel } from '../ui/change.ts';
 import { Hud, type AlertTone, type RaceHudData } from '../ui/hud.ts';
 import { Screens, type GarageItem, type GarageTab, type OverModel } from '../ui/screens.ts';
-import { chooseLane, type Body } from './drivers.ts';
+import { chooseLane, sideClear, type Body } from './drivers.ts';
 import { Traffic, type Hazard, type TrafficEnv, type Vehicle, type Walker } from './traffic.ts';
 
 const BUS = { w: 2.3, l: 5.6 } as const;
@@ -144,6 +146,19 @@ interface ChangeTask {
   readonly fare: number;
   readonly paid: number;
   readonly due: number;
+}
+
+interface Rival {
+  readonly v: Vehicle;
+  readonly name: string;
+  readonly stopKey: string;
+  readonly stopName: string;
+  phase: 'chase' | 'loading' | 'leaving';
+  loadT: number;
+  taken: number;
+  /** Passengers it will take at most. */
+  readonly cap: number;
+  think: number;
 }
 
 interface Racer {
@@ -250,6 +265,12 @@ interface Run {
   /** Cool-down after rubbing against a racer or rival. */
   bumpT: number;
   readonly race: RaceState | null;
+  rival: Rival | null;
+  /** Stops finished since the last rival danfo, and the last stop a rival was considered for. */
+  rivalWait: number;
+  rivalChecked: string;
+  rivalsMet: number;
+  rivalsBeaten: number;
 }
 
 const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
@@ -586,6 +607,7 @@ export class Game {
   // ---------- World reset ----------
   /** Clear the road and start a fresh lap of the route; `runStart` is where the route begins. */
   private resetWorld(runStart: number, rng: Rng = Math.random): void {
+    if (this.run?.rival) this.retireRival(this.run);
     for (const s of this.stops.values()) this.releaseStop(s);
     for (const s of this.stations.values()) this.releaseStation(s);
     for (const j of this.junctions.values()) this.releaseJunction(j);
@@ -671,6 +693,11 @@ export class Game {
       startDist: this.dist,
       bumpT: 0,
       race: null,
+      rival: null,
+      rivalWait: 1,
+      rivalChecked: '',
+      rivalsMet: 0,
+      rivalsBeaten: 0,
     };
     this.speed = Math.max(this.speed, 8);
     this.lane = 1;
@@ -723,6 +750,7 @@ export class Game {
       this.finishRace(r, r.race);
       return;
     }
+    if (r.rival) this.retireRival(r);
     this.mode = 'over';
     this.hud.show(false);
     this.change.hide();
@@ -766,6 +794,7 @@ export class Game {
         ['Fuel bought', `−${money(r.fuelSpent)}`],
         ['Fines and toll', `−${money(r.fines + r.tolls)}`],
         ['Mission rewards', money(rewards.bank)],
+        ...(r.rivalsMet > 0 ? [['Rival danfos beaten', `${r.rivalsBeaten} of ${r.rivalsMet}`] as [string, string]] : []),
       ],
       net: money(r.cash + rewards.bank),
       bank: money(s.bank),
@@ -1028,6 +1057,7 @@ export class Game {
     this.trackBridge(kind, r);
 
     this.updateStops(dt, r);
+    this.updateRival(dt, r);
     this.updateStations(dt, r);
     this.updateJunctions(dt, r);
     this.updateTolls(r);
@@ -1192,6 +1222,11 @@ export class Game {
       startDist: start,
       bumpT: 0,
       race,
+      rival: null,
+      rivalWait: 0,
+      rivalChecked: '',
+      rivalsMet: 0,
+      rivalsBeaten: 0,
     };
     for (const [word, at] of [['START', start + this.size.l / 2 + 0.6], ['FINISH', finish]] as const) {
       const group = makeRaceGate(word);
@@ -1316,20 +1351,28 @@ export class Game {
     return 1 + race.racers.filter((rc) => rc.finishT !== null || rc.v.d > this.dist).length;
   }
 
-  /** Rubbing against a racer or rival: both lose speed, nobody loses bodywork. */
+  /** Rubbing against a racer or rival: the cars never pass through each other, both lose speed, nobody loses bodywork. */
   private bump(v: Vehicle): void {
     const r = this.run;
-    if (!r || r.bumpT > 0) return;
-    r.bumpT = 0.7;
-    const sideBySide = Math.abs(v.d - this.dist) < (v.l + this.size.l) / 2 - 1.2;
+    if (!r) return;
+    const touching = (v.l + this.size.l) / 2 - 0.3;
+    const sideBySide = Math.abs(v.d - this.dist) < touching - 0.9;
+    // Keep them apart every frame; the knock itself only lands once per cool-down.
     if (sideBySide) this.lane = this.prevLane;
-    else if (v.d < this.dist) v.d = Math.min(v.d, this.dist - (v.l + this.size.l) / 2 - 0.2);
-    else this.speed = Math.min(this.speed * 0.8, v.v * 0.9);
+    else if (v.d > this.dist) {
+      this.dist = Math.min(this.dist, v.d - touching);
+      this.speed = Math.min(this.speed, v.v);
+    } else {
+      v.d = Math.min(v.d, this.dist - touching);
+      v.v = Math.min(v.v, this.speed);
+    }
+    if (r.bumpT > 0) return;
+    r.bumpT = 0.7;
     this.speed *= 0.85;
     v.v *= 0.75;
     this.shake = Math.max(this.shake, 0.3);
     this.sound.thud();
-    this.hud.say(pick(LINES.raceBump), 'passenger');
+    this.hud.say(pick(r.race ? LINES.raceBump : LINES.rivalBump), 'passenger');
   }
 
   private raceHud(r: Run, race: RaceState): RaceHudData {
@@ -1584,6 +1627,7 @@ export class Game {
 
   private finishStop(r: Run, st: StopEnt): void {
     st.done = true;
+    r.rivalWait += 1;
     if (r.parked?.key === st.key) this.unpark();
     const missed = r.riders.filter((rd) => rd.destSerial === st.serial).length;
     if (missed > 0) {
@@ -1632,6 +1676,141 @@ export class Game {
       return;
     }
     this.change.show({ who: task.who, fare: task.fare, paid: task.paid, due: task.due, given: r.changeGiven, timeLeft: r.changeT, total: TUNING.changeSeconds });
+  }
+
+  // ---------- Rival danfos ----------
+  /** Now and then another danfo turns up and races the player to the next stop for its passengers. */
+  private updateRival(dt: number, r: Run): void {
+    if (!r.rival) {
+      this.maybeSpawnRival(r);
+      return;
+    }
+    const rv = r.rival;
+    const v = rv.v;
+    const st = this.stops.get(rv.stopKey);
+    // Traffic dropped it (it fell far behind): the player left it standing.
+    if (!this.traffic.vehicles.includes(v)) {
+      if (rv.phase === 'chase') this.rivalBeaten(r, rv, `You don leave ${rv.name} for back!`);
+      this.retireRival(r);
+      return;
+    }
+    const you: Body = { d: this.dist, x: this.x, l: this.size.l, v: this.speed };
+    const kind = stretchAt(this.route, v.d - this.runStart).kind;
+    const base = kind === 'market' ? 10 : kind === 'city' ? 15 : 19;
+    rv.think -= dt;
+    if (rv.phase === 'chase') {
+      if (!st || st.done) {
+        rv.phase = 'leaving';
+      } else if (r.parked?.kind === 'stop' && r.parked.key === rv.stopKey) {
+        this.rivalBeaten(r, rv, pick(LINES.rivalBeat));
+        rv.phase = 'leaving';
+      } else {
+        const gap = st.at - v.d;
+        // It pushes harder once the player is ahead.
+        let aim = base * (this.dist > v.d + 5 ? 1.2 : 1);
+        if (v.lane === KERB && gap < 60) aim = Math.min(aim, Math.sqrt(2 * 3.5 * Math.max(0, gap)) + 0.4);
+        v.aim = aim;
+        if (rv.think <= 0) {
+          rv.think = 0.25;
+          if (gap < 150 && v.lane < KERB) {
+            if (sideClear(v, v.lane + 1, this.traffic, you)) {
+              v.lane += 1;
+              rv.think = 0.9;
+            }
+          } else if (gap >= 150) {
+            const brt = stretchAt(this.route, v.d - this.runStart).brt === true;
+            const lane = chooseLane(v, this.traffic, you, 20 + v.v, (l) => l !== KERB && !(brt && l === 0));
+            if (lane !== v.lane) {
+              v.lane = lane;
+              rv.think = 1;
+            }
+          }
+        }
+        if (v.lane === KERB && Math.abs(gap) < 2.5 && v.v < 0.8) {
+          rv.phase = 'loading';
+          rv.loadT = 0.6;
+        } else if (gap < -8) rv.phase = 'leaving';
+      }
+    } else if (rv.phase === 'loading' && st) {
+      v.aim = 0;
+      rv.loadT -= dt;
+      if (rv.loadT <= 0) {
+        rv.loadT = 0.55;
+        const doorZ = st.at - v.d - 1.6;
+        let best = -1;
+        st.waiting.forEach((w, i) => {
+          if (best < 0 || Math.abs(w.mesh.position.z - doorZ) < Math.abs((st.waiting[best]?.mesh.position.z ?? 0) - doorZ)) best = i;
+        });
+        const w = rv.taken < rv.cap && best >= 0 ? st.waiting.splice(best, 1)[0] : undefined;
+        if (w) {
+          rv.taken += 1;
+          st.movers.push({ mesh: w.mesh, kind: w.kind, t: 0, board: true, x0: w.mesh.position.x, z0: w.mesh.position.z, x1: v.x + 1.25, z1: doorZ, dir: 0 });
+        } else {
+          rv.phase = 'leaving';
+          if (rv.taken > 0) {
+            this.hud.say(pick(LINES.rivalStole), 'conductor');
+            this.hud.popup(`−${rv.taken} passenger${rv.taken === 1 ? '' : 's'}`, `${rv.name} loaded first`, 'bad');
+            this.sound.changeBad();
+          }
+        }
+      }
+    } else {
+      // Leaving: pull out of the kerb lane and drive on.
+      v.aim = base;
+      if (v.lane === KERB && rv.think <= 0) {
+        rv.think = 0.3;
+        if (sideClear(v, KERB - 1, this.traffic, you)) v.lane = KERB - 1;
+      }
+      if (v.lane !== KERB && Math.abs(v.d - this.dist) > 60) this.retireRival(r);
+    }
+  }
+
+  private maybeSpawnRival(r: Run): void {
+    if (r.t < 20 || r.rivalWait < 2) return;
+    const st = this.nextStop();
+    if (!st || st.called || st.waiting.length < 2 || st.key === r.rivalChecked) return;
+    const ahead = st.at - this.dist;
+    if (ahead < 260 || ahead > 560) return;
+    r.rivalChecked = st.key;
+    if (Math.random() > 0.5) return;
+    const d = this.dist + rand(35, 70);
+    // A middle lane with room, preferably not the player's.
+    const lanes = [1, 2].filter((l) => this.traffic.laneFree(l, d, 16));
+    const lane = lanes.find((l) => l !== this.lane) ?? lanes[0];
+    if (lane === undefined) return;
+    const v = this.traffic.addVehicle('danfo', lane, d, Math.max(8, this.speed * 0.9));
+    v.driver = 'rival';
+    v.accel = 4.5;
+    v.steer = 4;
+    const name = pick(RIVALS);
+    // A bigger tag than racers get: the rival is usually further away.
+    v.mesh.add(makeNameTag(name, '#ef5b45', 2.5, 3.4));
+    r.rival = { v, name, stopKey: st.key, stopName: st.name, phase: 'chase', loadT: 0, taken: 0, cap: Math.round(rand(3, 6)), think: 0.5 };
+    r.rivalWait = 0;
+    r.rivalsMet += 1;
+    this.hud.say(pick(RIVAL_CALLS)(name, st.name), 'conductor');
+  }
+
+  private rivalBeaten(r: Run, rv: Rival, line: string): void {
+    const bonus = 300;
+    this.earn(r, bonus);
+    r.tips += bonus;
+    r.rivalsBeaten += 1;
+    this.emit('rivalBeat', 1);
+    this.hud.say(line, 'conductor');
+    this.hud.popup(`+${money(bonus)}`, `beat ${rv.name} to ${rv.stopName}`, 'gold');
+    this.sound.changeOk();
+  }
+
+  /** Hand the rival back to ordinary traffic and take its name tag off before its mesh can be reused. */
+  private retireRival(r: Run): void {
+    const rv = r.rival;
+    if (!rv) return;
+    removeNameTag(rv.v.mesh);
+    rv.v.driver = 'traffic';
+    rv.v.accel = 3.5;
+    rv.v.steer = 3;
+    r.rival = null;
   }
 
   // ---------- Filling stations ----------
@@ -2166,6 +2345,11 @@ export class Game {
     else if (r.fuel < r.tank * 0.2) alerts.push({ id: 'fuel', text: nextStation !== null ? `Fuel low · station in ${Math.max(0, Math.round(nextStation - this.dist))} m` : 'Fuel low!', tone: 'bad' });
     else if (nextStation !== null && nextStation - this.dist < 250 && r.fuel < r.tank * 0.75) alerts.push({ id: 'fuel', text: 'Filling station ahead: kerb lane + brake', tone: 'info' });
     if (r.rain > 0.3) alerts.push({ id: 'rain', text: 'Rain: brakes slippery', tone: 'info' });
+    const rv = r.rival;
+    if (rv && rv.phase === 'chase') {
+      const gap = Math.round(rv.v.d - this.dist);
+      alerts.push({ id: 'rival', text: `${rv.name} racing you to ${rv.stopName} · ${Math.abs(gap)} m ${gap >= 0 ? 'ahead' : 'behind'}`, tone: gap >= 0 ? 'warn' : 'ok' });
+    } else if (rv && rv.phase === 'loading') alerts.push({ id: 'rival', text: `${rv.name} is loading at ${rv.stopName}!`, tone: 'bad' });
 
     const h = mod(r.hour, 24);
     const sky = r.rain > 0.3 ? 'Rain' : r.haze > 0.4 && this.stage.darkness < 0.5 ? 'Harmattan' : this.stage.darkness > 0.6 ? 'Night' : h >= 17.5 ? 'Evening' : h < 11 ? 'Morning' : 'Afternoon';

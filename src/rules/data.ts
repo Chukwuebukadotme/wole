@@ -232,7 +232,19 @@ export const LINES = {
   raceBump: ['Ehen! Na rubbing be that!', 'Commot for my front!', 'Gentle with the panel!'],
   raceLead: ['You dey lead! No look back!', 'Na you be oga of this road!'],
   raceFinish: ['Finish line! Who win?'],
+  rivalBeat: ['We reach first! Na our passengers be that!', 'Rival don dey look us from back!', 'Who send am message? We don win!'],
+  rivalBump: ['Ehen! You wan scratch am?', 'Gently with that danfo!', 'Na rival, no be enemy o!'],
+  rivalStole: ['Rival don carry our passengers!', 'Haba! Dem don pack our people!', 'We too slow! Dem don carry everybody!'],
 } as const;
+
+/** Drivers of rival danfos. */
+export const RIVALS: readonly string[] = ['Kunle', 'Emeka', 'Sule', 'Bayo', 'Chidi', 'Musa', 'Tope', 'Obinna'];
+/** What the conductor shouts when a rival danfo turns up. */
+export const RIVAL_CALLS: readonly ((name: string, stop: string) => string)[] = [
+  (n, s) => `${n} danfo dey go ${s} too! Beat am there!`,
+  (n, s) => `See ${n}! E wan carry our ${s} passengers! Move!`,
+  (n, s) => `${n} don enter our route! ${s} first, oya!`,
+];
 
 // ---------- Garage ----------
 export interface PaintDef {
@@ -314,7 +326,8 @@ export type MissionEvent =
   | 'hawkerSale'
   | 'toll'
   | 'rainDeliver'
-  | 'raceWin';
+  | 'raceWin'
+  | 'rivalBeat';
 export interface MissionDef {
   readonly id: MissionEvent;
   /** "run": progress resets each run. "total": progress carries across runs. */
@@ -342,6 +355,7 @@ export const MISSIONS: readonly MissionDef[] = [
   { id: 'toll', scope: 'total', mode: 'sum', minLevel: 6, target: () => 1, text: () => 'Pay the Lekki toll' },
   { id: 'rainDeliver', scope: 'total', mode: 'sum', minLevel: 2, target: (l) => 3 + l, text: (n) => `Deliver ${n} passengers in the rain` },
   { id: 'raceWin', scope: 'total', mode: 'sum', minLevel: 2, target: (l) => 1 + Math.floor(l / 4), text: (n) => (n === 1 ? 'Win a race' : `Win ${n} races`) },
+  { id: 'rivalBeat', scope: 'total', mode: 'sum', minLevel: 1, target: (l) => 2 + Math.floor(l / 2), text: (n) => `Beat ${n} rival danfos to a stop` },
 ];
 
 // ---------- Daily events (weekday in West Africa Time) ----------

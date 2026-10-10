@@ -388,6 +388,7 @@ export class Screens {
           <li><b>BRT lane</b><span>The red lane is fast but cameras fine you ₦1,500, and BRT buses come from behind.</span></li>
           <li><b>Streak</b><span>Each clean drop-off raises fares to ×3. Crashes, missed stops, scaring people and warden fines reset it.</span></li>
           <li><b>Horn</b><span>HORN or <kbd>H</kbd> moves okadas and kekes out of your lane and hurries people crossing.</span></li>
+          <li><b>Rivals</b><span>Sometimes another danfo races you to the next stop. Park in the bay first to keep the passengers and earn ₦300; if it loads first, it carries them off.</span></li>
           <li><b>Racing</b><span>Press Race on the home screen, pick a race and a car. Hold GAS or <kbd>↑</kbd> for full speed. Bumping other racers slows you both; hitting traffic costs bodywork. The top three win prize money.</span></li>
         </ul>
         <h3>Who rides your danfo</h3>
