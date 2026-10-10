@@ -752,6 +752,7 @@ export class Game {
     }
     if (r.rival) this.retireRival(r);
     this.mode = 'over';
+    this.shake = 0;
     this.hud.show(false);
     this.change.hide();
     this.sound.setRain(0);
@@ -930,6 +931,8 @@ export class Game {
     } else if (this.mode === 'over') this.speed = Math.max(0, this.speed - 14 * dt);
 
     if (this.mode !== 'paused') {
+      // Crash shake fades in every mode, so it never outlives the run.
+      this.shake = Math.max(0, this.shake - dt * 1.8);
       if (this.mode !== 'play') this.dist += this.speed * dt;
       this.updateMotion(dt);
       this.syncFeatures();
@@ -1014,7 +1017,6 @@ export class Game {
     r.invuln = Math.max(0, r.invuln - dt);
     r.bumpT = Math.max(0, r.bumpT - dt);
     r.potholeT = Math.max(0, r.potholeT - dt);
-    this.shake = Math.max(0, this.shake - dt * 1.8);
 
     const cruise = Math.min(TUNING.speedMax, TUNING.speedStart + TUNING.speedRamp * r.t);
     const empty = r.fuel <= 0;
@@ -1282,7 +1284,6 @@ export class Game {
     r.hour = race.def.hour + r.t * TUNING.clockRate;
     r.invuln = Math.max(0, r.invuln - dt);
     r.bumpT = Math.max(0, r.bumpT - dt);
-    this.shake = Math.max(0, this.shake - dt * 1.8);
     const car = race.car;
     if (race.phase === 'grid') {
       race.countdown -= dt;
@@ -1392,6 +1393,7 @@ export class Game {
 
   private finishRace(r: Run, race: RaceState): void {
     this.mode = 'over';
+    this.shake = 0;
     this.hud.show(false);
     this.sound.engineOff();
     const s = this.save;
