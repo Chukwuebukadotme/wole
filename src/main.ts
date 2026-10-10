@@ -1,3 +1,4 @@
+import { loadCarModels } from './engine/cars.ts';
 import { Game } from './game/game.ts';
 import { bindInput } from './input.ts';
 
@@ -29,6 +30,8 @@ try {
     undoChange: () => game.undoChange(),
   });
   game.start();
+  // Traffic uses simple box cars until the 3D models arrive.
+  void loadCarModels();
   // Automated play tests read live state through ?debug; normal players never see it.
   if (new URLSearchParams(window.location.search).has('debug')) (window as unknown as { __wole?: Game }).__wole = game;
 } catch (err) {

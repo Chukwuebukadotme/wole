@@ -63,6 +63,8 @@ export interface RouteDef {
   readonly length: number;
   readonly unlockLevel: number;
   readonly fareScale: number;
+  /** 0–1: how often luxury cars and exotics turn up in traffic. */
+  readonly posh: number;
   readonly stretches: readonly Stretch[];
   readonly stops: readonly StopDef[];
   readonly stations: readonly number[];
@@ -81,6 +83,7 @@ export const ROUTES: readonly RouteDef[] = [
     length: 4200,
     unlockLevel: 1,
     fareScale: 1,
+    posh: 0.2,
     stretches: [
       { from: 0, to: 600, kind: 'market', name: 'Mile 12 Market' },
       { from: 600, to: 2580, kind: 'city', name: 'Ikorodu Road' },
@@ -112,6 +115,7 @@ export const ROUTES: readonly RouteDef[] = [
     length: 5100,
     unlockLevel: 3,
     fareScale: 1.15,
+    posh: 0.5,
     stretches: [
       { from: 0, to: 1020, kind: 'city', name: 'Ebute Metta' },
       { from: 1020, to: 3420, kind: 'bridge', name: 'Third Mainland Bridge' },
@@ -140,6 +144,7 @@ export const ROUTES: readonly RouteDef[] = [
     length: 5400,
     unlockLevel: 6,
     fareScale: 1.3,
+    posh: 1,
     stretches: [
       { from: 0, to: 4620, kind: 'expressway', name: 'Lekki–Epe Expressway' },
       { from: 4620, to: 5400, kind: 'market', name: 'Ajah Market' },

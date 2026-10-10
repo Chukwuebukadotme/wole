@@ -1566,6 +1566,7 @@ export class Game {
       hawkerMult: this.event.hawkerMult,
       rain: r?.rain ?? 0,
       dark: this.stage.darkness,
+      posh: route.posh,
       playing: this.mode === 'play',
       stretchAt: (d) => {
         const s = stretchAt(route, d - runStart);

@@ -1,30 +1,19 @@
 import type * as THREE from 'three';
+import { carModelsReady, makeVehicle } from '../engine/cars.ts';
+import { makeBarrier, makeBrtBus, makeDanfo, makeFigure, makeKeke, makeNote, makeOkada, makePothole, makePuddle } from '../engine/models.ts';
+import { MODEL_SIZE, trafficCar, trafficTruck, type Look } from '../rules/cars.ts';
 import { KERB, KERB_X, LANES, PAINTS, laneX, type StretchKind } from '../rules/data.ts';
-import { clamp, pick, rand, weighted } from '../rules/util.ts';
-import {
-  makeBarrier,
-  makeBrtBus,
-  makeCar,
-  makeDanfo,
-  makeFigure,
-  makeKeke,
-  makeNote,
-  makeOkada,
-  makePothole,
-  makePuddle,
-  makeTruck,
-} from '../engine/models.ts';
+import { clamp, pick, rand, weighted, type Rng } from '../rules/util.ts';
 
 export type VehicleKind = 'car' | 'danfo' | 'keke' | 'okada' | 'truck' | 'brt';
 export type HazardKind = 'barrier' | 'pothole' | 'puddle';
 export type WalkerKind = 'pedestrian' | 'hawker';
 
-const SIZE: Readonly<Record<VehicleKind | HazardKind, { w: number; l: number }>> = {
-  car: { w: 1.8, l: 4.2 },
+/** Cars and trucks take their size from their model. */
+const SIZE: Readonly<Record<Exclude<VehicleKind, 'car' | 'truck'> | HazardKind, { w: number; l: number }>> = {
   danfo: { w: 2.3, l: 5.6 },
   keke: { w: 1.35, l: 2.6 },
   okada: { w: 0.8, l: 1.9 },
-  truck: { w: 2.5, l: 7.6 },
   brt: { w: 2.55, l: 12 },
   barrier: { w: 2.4, l: 0.45 },
   pothole: { w: 2.0, l: 1.5 },
@@ -46,6 +35,8 @@ interface Flingable {
 }
 export interface Vehicle extends Flingable {
   kind: VehicleKind;
+  /** Pool the mesh returns to. */
+  readonly key: string;
   lane: number;
   v: number;
   w: number;
@@ -99,6 +90,8 @@ export interface TrafficEnv {
   readonly hawkerMult: number;
   readonly rain: number;
   readonly dark: number;
+  /** 0–1: how often luxury cars and exotics turn up. */
+  readonly posh: number;
   readonly playing: boolean;
   stretchAt(d: number): StretchInfo;
   /** True near bus stops and stations, where the kerb lane must stay clear. */
@@ -110,12 +103,10 @@ export interface TrafficEnv {
 }
 
 type Factory = () => THREE.Group;
-const VEHICLE_FACTORY: Readonly<Record<VehicleKind, Factory>> = {
-  car: makeCar,
+const VEHICLE_FACTORY: Readonly<Record<Exclude<VehicleKind, 'car' | 'truck'>, Factory>> = {
   danfo: () => makeDanfo(pick(PAINTS.slice(0, 3)), null, false).group,
   keke: makeKeke,
   okada: makeOkada,
-  truck: makeTruck,
   brt: makeBrtBus,
 };
 const HAZARD_FACTORY: Readonly<Record<HazardKind, Factory>> = { barrier: makeBarrier, pothole: makePothole, puddle: makePuddle };
@@ -127,6 +118,8 @@ export class Traffic {
   readonly walkers: Walker[] = [];
   private spawnD = 0;
   private walkerD = 0;
+  /** Drives spawning only, so a seeded run lays the road out the same way each time. */
+  private rng: Rng = Math.random;
   private readonly pools = new Map<string, THREE.Group[]>();
   private readonly scene: THREE.Scene;
 
@@ -152,8 +145,9 @@ export class Traffic {
   }
 
   /** Remove everything and start spawning ahead of `fromD`. */
-  reset(fromD: number): void {
-    for (const v of this.vehicles) this.give(`v:${v.kind}`, v.mesh);
+  reset(fromD: number, rng: Rng = Math.random): void {
+    this.rng = rng;
+    for (const v of this.vehicles) this.give(v.key, v.mesh);
     for (const h of this.hazards) this.give(`h:${h.kind}`, h.mesh);
     for (const n of this.notes) this.give('note', n.mesh);
     for (const w of this.walkers) this.give(`w:${w.kind}`, w.mesh);
@@ -172,11 +166,25 @@ export class Traffic {
     );
   }
 
-  addVehicle(kind: VehicleKind, lane: number, d: number, v: number, broken = false): Vehicle {
-    const size = SIZE[kind];
+  addVehicle(kind: VehicleKind, lane: number, d: number, v: number, broken = false, look?: Look): Vehicle {
+    let size: { w: number; l: number };
+    let key: string;
+    let make: Factory;
+    if (kind === 'car' || kind === 'truck') {
+      const l = look ?? (kind === 'car' ? trafficCar('city', 0, this.rng) : trafficTruck('city', this.rng));
+      size = MODEL_SIZE[l.model];
+      // Box stand-ins drawn before the models loaded go to their own pool.
+      key = `v:${l.model}:${l.color ?? 'stock'}:${carModelsReady() ? '3d' : 'box'}`;
+      make = () => makeVehicle(l.model, l.color);
+    } else {
+      size = SIZE[kind];
+      key = `v:${kind}`;
+      make = VEHICLE_FACTORY[kind];
+    }
     const vehicle: Vehicle = {
       kind,
-      mesh: this.take(`v:${kind}`, VEHICLE_FACTORY[kind]),
+      key,
+      mesh: this.take(key, make),
       lane,
       x: laneX(lane),
       y: 0,
@@ -200,7 +208,7 @@ export class Traffic {
 
   /** A car crossing the junction sideways at absolute position `d`. */
   addCrossCar(d: number, dir: -1 | 1): void {
-    const car = this.addVehicle('car', -1, d, 0);
+    const car = this.addVehicle('car', -1, d, 0, false, trafficCar('city', 0));
     car.cross = true;
     car.x = -dir * 42;
     car.vx = dir * 10;
@@ -220,12 +228,13 @@ export class Traffic {
   }
 
   private spawnTraffic(env: TrafficEnv): void {
+    const rng = this.rng;
     while (this.spawnD < env.dist + 240) {
       const d = this.spawnD;
       const s = env.stretchAt(d);
       const lanes = [0, 1, 2, 3].filter((l) => !(s.brt && l === 0) && !(l === KERB && env.kerbReserved(d)));
       for (let i = lanes.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rng() * (i + 1));
         const a = lanes[i];
         const b = lanes[j];
         if (a !== undefined && b !== undefined) {
@@ -234,44 +243,48 @@ export class Traffic {
         }
       }
       const busy = s.kind === 'market' ? 0.62 : s.kind === 'bridge' ? 0.42 : s.kind === 'expressway' ? 0.4 : 0.35;
-      const two = Math.random() < clamp((busy + 0.3 * env.difficulty) * env.trafficMult, 0, 0.9);
+      const two = rng() < clamp((busy + 0.3 * env.difficulty) * env.trafficMult, 0, 0.9);
       const count = Math.min(lanes.length - 1, two ? 2 : 1);
       // The first stretch of a run eases in: a mostly clear kerb lane and fewer hazards.
       const warmup = Math.min(1, env.difficulty * 5);
       for (let i = 0; i < count; i++) {
         const lane = lanes[i];
         if (lane === undefined) continue;
-        if (lane === KERB && Math.random() > 0.35 + 0.65 * warmup) continue;
+        if (lane === KERB && rng() > 0.35 + 0.65 * warmup) continue;
         const hazardChance = (s.kind === 'market' ? 0.2 : s.kind === 'city' ? 0.16 : s.kind === 'expressway' ? 0.1 : 0.06) * (0.4 + 0.6 * warmup);
-        if (Math.random() < hazardChance + 0.08 * env.difficulty) {
+        if (rng() < hazardChance + 0.08 * env.difficulty) {
           if (s.kind === 'bridge') {
-            if (this.laneFree(lane, d, 14)) this.addVehicle(pick(['car', 'truck'] as const), lane, d, 0, true);
+            const truck = rng() < 0.4;
+            const look = truck ? trafficTruck(s.kind, rng) : trafficCar(s.kind, env.posh, rng);
+            if (this.laneFree(lane, d, 14)) this.addVehicle(truck ? 'truck' : 'car', lane, d, 0, true, look);
           } else {
-            let kind: HazardKind = Math.random() < 0.5 ? 'barrier' : 'pothole';
-            if (kind === 'pothole' && env.rain > 0.3 && Math.random() < 0.6) kind = 'puddle';
+            let kind: HazardKind = rng() < 0.5 ? 'barrier' : 'pothole';
+            if (kind === 'pothole' && env.rain > 0.3 && rng() < 0.6) kind = 'puddle';
             if (this.laneFree(lane, d, 10)) this.addHazard(kind, lane, d);
           }
           continue;
         }
         const kind: VehicleKind =
           lane === KERB
-            ? weighted([['keke', 0.55], ['okada', 0.45]] as const)
+            ? weighted([['keke', 0.55], ['okada', 0.45]] as const, rng)
             : s.kind === 'market'
-              ? weighted([['keke', 0.3], ['okada', 0.3], ['danfo', 0.25], ['car', 0.1], ['truck', 0.05]] as const)
+              ? weighted([['keke', 0.3], ['okada', 0.3], ['danfo', 0.25], ['car', 0.1], ['truck', 0.05]] as const, rng)
               : s.kind === 'city'
-                ? weighted([['car', 0.4], ['danfo', 0.22], ['keke', 0.12], ['okada', 0.14], ['truck', 0.12]] as const)
-                : weighted([['car', 0.55], ['danfo', 0.22], ['truck', 0.15], ['okada', s.kind === 'bridge' ? 0 : 0.08]] as const);
-        if (this.laneFree(lane, d, SIZE[kind].l + 8)) this.addVehicle(kind, lane, d, this.laneSpeed(lane, s, kind));
+                ? weighted([['car', 0.4], ['danfo', 0.22], ['keke', 0.12], ['okada', 0.14], ['truck', 0.12]] as const, rng)
+                : weighted([['car', 0.55], ['danfo', 0.22], ['truck', 0.15], ['okada', s.kind === 'bridge' ? 0 : 0.08]] as const, rng);
+        const look = kind === 'car' ? trafficCar(s.kind, env.posh, rng) : kind === 'truck' ? trafficTruck(s.kind, rng) : undefined;
+        const length = look ? MODEL_SIZE[look.model].l : kind === 'car' || kind === 'truck' ? 0 : SIZE[kind].l;
+        if (this.laneFree(lane, d, length + 8)) this.addVehicle(kind, lane, d, this.laneSpeed(lane, s, kind), false, look);
       }
-      if (s.brt && Math.random() < 0.2 && this.laneFree(0, d, 20)) this.addVehicle('brt', 0, d, 16);
+      if (s.brt && rng() < 0.2 && this.laneFree(0, d, 20)) this.addVehicle('brt', 0, d, 16);
       const free = lanes.slice(count);
-      if (free.length > 0 && Math.random() < 0.4) {
-        const lane = pick(free);
+      if (free.length > 0 && rng() < 0.4) {
+        const lane = pick(free, rng);
         if (this.laneFree(lane, d + 12, 10))
           for (let k = 0; k < 5; k++) this.notes.push({ mesh: this.take('note', makeNote), lane, x: laneX(lane), d: d + 6 + k * 3 });
       }
       const spacing = s.kind === 'market' ? 0.8 : s.kind === 'expressway' || s.kind === 'bridge' ? 1.15 : 1;
-      this.spawnD += (rand(28, 50) - 12 * env.difficulty) * spacing;
+      this.spawnD += (rand(28, 50, rng) - 12 * env.difficulty) * spacing;
     }
   }
 
@@ -465,7 +478,7 @@ export class Traffic {
   removeVehicle(i: number): void {
     const v = this.vehicles[i];
     if (!v) return;
-    this.give(`v:${v.kind}`, v.mesh);
+    this.give(v.key, v.mesh);
     this.vehicles.splice(i, 1);
   }
 

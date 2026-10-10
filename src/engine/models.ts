@@ -178,9 +178,10 @@ export function makeDanfo(paint: PaintDef, sticker: string | null, unique: boole
 // ---------- Other road users ----------
 const CAR_COLORS = [0xc0392b, 0xecf0f1, 0x2c3e50, 0x7f8c8d, 0x16a085, 0x1f4e79, 0x8e44ad, 0xd4ac0d, 0x5d6d7e];
 
-export function makeCar(): THREE.Group {
+/** Box-built saloon, used until the 3D car models have loaded. */
+export function makeCar(color?: number): THREE.Group {
   const g = new THREE.Group();
-  const c = pick(CAR_COLORS);
+  const c = color ?? pick(CAR_COLORS);
   const n = night();
   g.add(box(1.8, 0.72, 4.2, c, 0, 0.68, 0), box(1.62, 0.5, 2.1, 0x1f2b33, 0, 1.28, 0.2), box(1.6, 0.1, 2.0, c, 0, 1.56, 0.2));
   g.add(box(0.3, 0.16, 0.05, n.tail, -0.6, 0.85, 2.11), box(0.3, 0.16, 0.05, n.tail, 0.6, 0.85, 2.11));
