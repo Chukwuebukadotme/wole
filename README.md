@@ -7,18 +7,20 @@ Built with TypeScript, Three.js and Vite. The city, people and sound are made in
 ## What's in the game
 
 - **Three routes:** Ikorodu Road (Mile 12 → Fadeyi, with a BRT corridor), Third Mainland (Ebute Metta → CMS over the lagoon bridge, unlocks at level 3) and Lekki Express (Lekki Phase 1 → Ajah with a toll gate, unlocks at level 6).
+- **Street races:** four races on stretches of the routes (Ikorodu Road Sprint, Third Mainland Night Dash, Lekki Big Boys Run and the Eko Night Grand Prix). Line up against four named drivers, weave through normal traffic and finish in the top three for prize money. Each race lays its traffic out the same way every time, so you can learn it and beat your best time.
+- **Cars to buy:** nine cars for racing alongside your danfo, from the Tokunbo Saloon and Yaba Hot Hatch to SUVs, luxury cars, electric cars and two exotics. Each has its own top speed, pull-away, handling and toughness; electric cars whine instead of growl. Passenger runs stay in the danfo.
 - **Busy roads:** saloons, yellow taxis, vans, pickups, jeeps, box trucks and refuse trucks, with luxury SUVs, sports coupés, electric cars and the odd race car showing up more on posh roads like Lekki.
 - **Living Lagos:** an in-game clock from dawn to night (streetlights, lit windows, headlights), harmattan haze in season, rain showers with slippery brakes, market stretches with stalls, people crossing and hawkers on the lane lines, and Independence Day bunting on 1 October.
 - **Passengers with personalities:** market women whose basins take two seats, students, office workers who tip if you are on time, preachers who protect your streak, Baba who doubles his fare for a smooth ride, hawkers who sell to your passengers, and owambe guests at night.
 - **Conductor and money:** give exact change from ₦50–₦500 notes for tips, buy fuel at filling stations, pay the Lekki toll, avoid warden and BRT camera fines.
-- **Progression:** missions, levels, a daily bonus, weekday events (Church Sunday, Monday Rush, Harmattan Tuesday, Market Wednesday, Fuel Queue Thursday, Owambe Friday, Rainy Saturday), and a garage with paint jobs, rear stickers, horns and upgrades. Progress is saved in the browser.
+- **Progression:** missions, levels, a daily bonus, weekday events (Church Sunday, Monday Rush, Harmattan Tuesday, Market Wednesday, Fuel Queue Thursday, Owambe Friday, Rainy Saturday), and a garage with cars, paint jobs, rear stickers, horns and upgrades. Danfo fares and race prizes go into the same bank. Progress is saved in the browser.
 
 ## Controls
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
 | Change lane | ← → or A D | Swipe left or right |
-| Speed up (eases back when released, up to 130 km/h) | Hold ↑ or W | Hold GAS |
+| Speed up (eases back when released; in a race, full speed of your car) | Hold ↑ or W | Hold GAS |
 | Brake (and stop at a bay) | Hold ↓, S or Shift | Hold BRAKE |
 | Hop over barriers | Space | Swipe up or HOP |
 | Leave a stop early | Space, ↑ or W | GO or GAS |
@@ -33,7 +35,7 @@ Requires Node.js 20.19 or newer.
 ```bash
 npm ci
 npm run dev        # local dev server
-npm test           # rules unit tests (fares, change, saves, missions, routes, daily events, traffic mix)
+npm test           # rules unit tests (fares, change, saves, missions, routes, daily events, traffic mix, races)
 npm run check      # type-check + tests + production build
 ```
 
@@ -53,7 +55,7 @@ Or from a terminal: `npx vercel` (preview) and `npx vercel --prod` (production).
 src/rules/   Pure game rules and data: routes, passengers, fares, change, saves, missions, daily events (unit tested)
 src/engine/  Three.js: renderer, sky and weather, world tiles, models, car models, textures, route features
 src/assets/  Car and truck models (glTF)
-src/game/    Game loop, traffic simulation, stops, stations, warden junctions, toll, BRT, collisions
+src/game/    Game loop, traffic simulation, AI racers, races, stops, stations, warden junctions, toll, BRT, collisions
 src/ui/      HUD, change panel and screens
 ```
 

@@ -13,6 +13,7 @@ export class SoundBoard {
   private master: GainNode | null = null;
   private hornNodes: { gain: GainNode; stop: () => void } | null = null;
   private rainNodes: { gain: GainNode; source: AudioBufferSourceNode } | null = null;
+  private engineNodes: { gain: GainNode; a: OscillatorNode; b: OscillatorNode; filter: BiquadFilterNode; electric: boolean } | null = null;
   private muted = false;
   horn: HornId = 'classic';
 
@@ -178,6 +179,64 @@ export class SoundBoard {
         this.rainNodes = null;
       }
     }
+  }
+
+  /** Race engine note pitched by speed (0–1): a petrol growl through the gears, or an electric whine. */
+  engine(level: number, throttle: boolean, electric: boolean): void {
+    const c = this.ctx;
+    const out = this.master;
+    if (!c || !out) return;
+    if (this.engineNodes && this.engineNodes.electric !== electric) this.engineOff();
+    if (!this.engineNodes) {
+      const gain = c.createGain();
+      gain.gain.value = 0.0001;
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      const a = c.createOscillator();
+      const b = c.createOscillator();
+      a.type = electric ? 'sine' : 'sawtooth';
+      b.type = electric ? 'triangle' : 'square';
+      a.connect(filter);
+      b.connect(filter);
+      filter.connect(gain);
+      gain.connect(out);
+      a.start();
+      b.start();
+      this.engineNodes = { gain, a, b, filter, electric };
+    }
+    const n = this.engineNodes;
+    const t = c.currentTime;
+    const k = Math.max(0, Math.min(1, level));
+    if (electric) {
+      n.a.frequency.setTargetAtTime(160 + 900 * k, t, 0.05);
+      n.b.frequency.setTargetAtTime(320 + 1800 * k, t, 0.05);
+      n.filter.frequency.setTargetAtTime(3000, t, 0.1);
+      n.gain.gain.setTargetAtTime((throttle ? 0.035 : 0.02) * (0.3 + k), t, 0.08);
+    } else {
+      // Four gears: the pitch climbs, drops at each change, then climbs again.
+      const gear = Math.min(3, Math.floor(k * 4));
+      const f = 48 + gear * 14 + (k * 4 - gear) * 55;
+      n.a.frequency.setTargetAtTime(f, t, 0.04);
+      n.b.frequency.setTargetAtTime(f * 0.5, t, 0.04);
+      n.filter.frequency.setTargetAtTime(380 + (throttle ? 900 : 300) * (0.4 + k), t, 0.08);
+      n.gain.gain.setTargetAtTime(throttle ? 0.07 : 0.045, t, 0.08);
+    }
+  }
+
+  engineOff(): void {
+    const n = this.engineNodes;
+    const c = this.ctx;
+    if (!n || !c) return;
+    const t = c.currentTime;
+    n.gain.gain.setTargetAtTime(0.0001, t, 0.05);
+    n.a.stop(t + 0.3);
+    n.b.stop(t + 0.3);
+    this.engineNodes = null;
+  }
+
+  /** Race countdown: short beeps for 3, 2, 1 and a long high one for GO. */
+  countBeep(go: boolean): void {
+    this.tone(go ? 1320 : 660, go ? 0.45 : 0.18, { type: 'square', gain: 0.07 });
   }
 
   note(): void {

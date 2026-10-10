@@ -25,7 +25,7 @@ export interface TitleModel {
   readonly muted: boolean;
 }
 
-export type GarageTab = 'paint' | 'sticker' | 'horn' | 'upgrade';
+export type GarageTab = 'car' | 'paint' | 'sticker' | 'horn' | 'upgrade';
 export interface GarageItem {
   readonly kind: ShopKind | 'upgrade';
   readonly id: string;
@@ -44,6 +44,43 @@ export interface GarageModel {
   readonly level: number;
   readonly items: readonly GarageItem[];
   readonly message: string;
+}
+
+export interface RaceCard {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly blurb: string;
+  readonly meta: string;
+  readonly locked: boolean;
+  readonly unlockLevel: number;
+  readonly selected: boolean;
+}
+export interface CarChoice {
+  readonly id: string;
+  readonly name: string;
+  readonly detail: string;
+  readonly swatch: string;
+  readonly selected: boolean;
+}
+export interface RacesModel {
+  readonly bank: string;
+  readonly level: number;
+  readonly races: readonly RaceCard[];
+  readonly cars: readonly CarChoice[];
+  readonly moreCars: boolean;
+}
+
+export interface RaceOverModel {
+  readonly title: string;
+  readonly reason: string;
+  readonly standings: readonly { place: string; name: string; car: string; time: string; you: boolean }[];
+  readonly lines: readonly [string, string][];
+  readonly net: string;
+  readonly bank: string;
+  readonly missions: readonly string[];
+  readonly levelUp: string | null;
+  readonly best: string | null;
 }
 
 export interface MissionRow {
@@ -75,7 +112,11 @@ export interface OverModel {
 export interface ScreenActions {
   start(): void;
   selectRoute(id: RouteId): void;
-  open(screen: 'garage' | 'missions' | 'help'): void;
+  open(screen: 'garage' | 'missions' | 'help' | 'race'): void;
+  selectRace(id: string): void;
+  pickCar(id: string): void;
+  startRace(): void;
+  preview(id: string): void;
   home(): void;
   toggleAuto(): void;
   toggleSound(): void;
@@ -88,12 +129,13 @@ export interface ScreenActions {
   upgrade(id: UpgradeId): void;
 }
 
-type ScreenId = 'title' | 'garage' | 'missions' | 'help' | 'pause' | 'over';
+type ScreenId = 'title' | 'garage' | 'race' | 'missions' | 'help' | 'pause' | 'over';
 
 export class Screens {
   private readonly roots: Record<ScreenId, HTMLElement> = {
     title: byId('screen-title'),
     garage: byId('screen-garage'),
+    race: byId('screen-race'),
     missions: byId('screen-missions'),
     help: byId('screen-help'),
     pause: byId('screen-pause'),
@@ -115,7 +157,19 @@ export class Screens {
             if (id) actions.selectRoute(id as RouteId);
             break;
           case 'open':
-            if (id === 'garage' || id === 'missions' || id === 'help') actions.open(id);
+            if (id === 'garage' || id === 'missions' || id === 'help' || id === 'race') actions.open(id);
+            break;
+          case 'race':
+            if (id) actions.selectRace(id);
+            break;
+          case 'car':
+            if (id) actions.pickCar(id);
+            break;
+          case 'race-start':
+            actions.startRace();
+            break;
+          case 'preview':
+            if (id) actions.preview(id);
             break;
           case 'home':
             actions.home();
@@ -189,6 +243,7 @@ export class Screens {
         <div class="routes" role="group" aria-label="Choose a route">${routes}</div>
         <div class="row">
           <button type="button" class="cta" data-action="start" data-focus>Start driving</button>
+          <button type="button" class="cta race-cta" data-action="open" data-id="race">Race</button>
           <button type="button" class="ghost" data-action="open" data-id="garage">Garage</button>
           <button type="button" class="ghost" data-action="open" data-id="missions">Missions</button>
           <button type="button" class="ghost" data-action="open" data-id="help">How to play</button>
@@ -204,6 +259,7 @@ export class Screens {
 
   garage(m: GarageModel): void {
     const tabs: [GarageTab, string][] = [
+      ['car', 'Cars'],
       ['paint', 'Paint'],
       ['sticker', 'Stickers'],
       ['horn', 'Horns'],
@@ -218,7 +274,9 @@ export class Screens {
         else if (it.owned) button = `<button type="button" class="equip" data-action="equip" data-kind="${it.kind}" data-id="${it.id}">Use</button>`;
         else if (it.lockedLevel !== null) button = `<span class="locked">Level ${it.lockedLevel}</span>`;
         else button = `<button type="button" class="buy" data-action="buy" data-kind="${it.kind}" data-id="${it.id}" ${it.affordable ? '' : 'disabled'}>Buy ₦${(it.price ?? 0).toLocaleString('en-NG')}</button>`;
-        return `<li class="item">${it.swatch ? `<i class="swatch" style="background:${it.swatch}"></i>` : ''}<span class="item-text"><b>${esc(it.name)}</b><small>${esc(it.detail)}</small></span>${button}</li>`;
+        // Tapping a car's row shows it on the garage floor.
+        const preview = it.kind === 'car' ? ` data-action="preview" data-id="${it.id}"` : '';
+        return `<li class="item${preview ? ' pickable' : ''}"${preview}>${it.swatch ? `<i class="swatch" style="background:${it.swatch}"></i>` : ''}<span class="item-text"><b>${esc(it.name)}</b><small>${esc(it.detail)}</small></span>${button}</li>`;
       })
       .join('');
     this.show(
@@ -229,6 +287,67 @@ export class Screens {
         <ul class="items">${items}</ul>
         <p class="message" role="status">${esc(m.message)}</p>
         <button type="button" class="cta" data-action="home" data-focus>Back</button>
+      </div>`,
+    );
+  }
+
+  races(m: RacesModel): void {
+    const races = m.races
+      .map(
+        (r) => `<button type="button" class="route${r.selected ? ' on' : ''}" data-action="race" data-id="${r.id}" ${r.locked ? 'disabled' : ''} aria-pressed="${r.selected}">
+          <span class="route-name">${esc(r.name)}</span>
+          <span class="route-path">${esc(r.path)}</span>
+          <span class="route-blurb">${r.locked ? `Unlocks at level ${r.unlockLevel}` : esc(r.blurb)}</span>
+          ${r.locked ? '' : `<span class="route-meta">${esc(r.meta)}</span>`}
+        </button>`,
+      )
+      .join('');
+    const cars = m.cars
+      .map(
+        (c) => `<button type="button" class="carpick${c.selected ? ' on' : ''}" data-action="car" data-id="${c.id}" aria-pressed="${c.selected}">
+          <i class="swatch" style="background:${c.swatch}"></i><span class="item-text"><b>${esc(c.name)}</b><small>${esc(c.detail)}</small></span>
+        </button>`,
+      )
+      .join('');
+    this.show(
+      'race',
+      `<div class="card wide">
+        <div class="title-top"><span class="eyebrow">Street racing</span><span class="wallet">${esc(m.bank)} · Level ${m.level}</span></div>
+        <h2>Race</h2>
+        <p class="lede">Beat four drivers to the finish through normal Lagos traffic. The top three win prize money.</p>
+        <div class="routes" role="group" aria-label="Choose a race">${races}</div>
+        <h3>Your car</h3>
+        <div class="carpicks" role="group" aria-label="Choose your car">${cars}</div>
+        ${m.moreCars ? '<p class="fine">Buy saloons, SUVs, luxury, electric and exotic cars in the Garage.</p>' : ''}
+        <div class="row">
+          <button type="button" class="cta" data-action="race-start" data-focus>Start race</button>
+          <button type="button" class="ghost" data-action="open" data-id="garage">Garage</button>
+          <button type="button" class="ghost" data-action="home">Back</button>
+        </div>
+      </div>`,
+    );
+  }
+
+  raceOver(m: RaceOverModel): void {
+    const rows = m.standings
+      .map((r) => `<li${r.you ? ' class="you"' : ''}><b>${esc(r.place)}</b><span>${esc(r.name)}<small>${esc(r.car)}</small></span><span class="count">${esc(r.time)}</span></li>`)
+      .join('');
+    this.show(
+      'over',
+      `<div class="card">
+        <span class="eyebrow">${esc(m.reason)}</span>
+        <h2>${esc(m.title)}</h2>
+        <ol class="standings">${rows}</ol>
+        <dl class="ledger">${m.lines.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}<div class="net"><dt>Take-home</dt><dd>${esc(m.net)}</dd></div></dl>
+        ${m.missions.length ? `<ul class="done-list">${m.missions.map((t) => `<li>Mission done: ${esc(t)}</li>`).join('')}</ul>` : ''}
+        ${m.levelUp ? `<p class="toast">${esc(m.levelUp)}</p>` : ''}
+        <div class="row"><span class="wallet">Bank: ${esc(m.bank)}</span>${m.best ? `<span class="badge">${esc(m.best)}</span>` : ''}</div>
+        <div class="row">
+          <button type="button" class="cta" data-action="again" data-focus>Race again</button>
+          <button type="button" class="ghost" data-action="open" data-id="race">Races</button>
+          <button type="button" class="ghost" data-action="open" data-id="garage">Garage</button>
+          <button type="button" class="ghost" data-action="home">Home</button>
+        </div>
       </div>`,
     );
   }
@@ -269,6 +388,7 @@ export class Screens {
           <li><b>BRT lane</b><span>The red lane is fast but cameras fine you ₦1,500, and BRT buses come from behind.</span></li>
           <li><b>Streak</b><span>Each clean drop-off raises fares to ×3. Crashes, missed stops, scaring people and warden fines reset it.</span></li>
           <li><b>Horn</b><span>HORN or <kbd>H</kbd> moves okadas and kekes out of your lane and hurries people crossing.</span></li>
+          <li><b>Racing</b><span>Press Race on the home screen, pick a race and a car. Hold GAS or <kbd>↑</kbd> for full speed. Bumping other racers slows you both; hitting traffic costs bodywork. The top three win prize money.</span></li>
         </ul>
         <h3>Who rides your danfo</h3>
         <ul class="pax">${pax}</ul>

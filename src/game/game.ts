@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SoundBoard } from '../audio.ts';
-import { makeBrtCamera, makeJunction, makeStation, makeStop, makeToll, plateMaterial, type JunctionVisual, type TollVisual } from '../engine/features.ts';
+import { carModelsReady, makeVehicle } from '../engine/cars.ts';
+import { makeBrtCamera, makeJunction, makeNameTag, makeRaceGate, makeStation, makeStop, makeToll, plateMaterial, removeNameTag, type JunctionVisual, type TollVisual } from '../engine/features.ts';
 import { makeDanfo, makeFigure, type DanfoModel, type FigureKind } from '../engine/models.ts';
 import { Stage } from '../engine/stage.ts';
 import { Tiles, type TileContext } from '../engine/tiles.ts';
@@ -28,6 +29,7 @@ import {
   type StretchKind,
   type UpgradeId,
 } from '../rules/data.ts';
+import { CARS, MODEL_SIZE, carById, carSummary, type CarDef, type ModelId } from '../rules/cars.ts';
 import { eventFor, isHarmattanSeason, previousDayKey, watDayKey } from '../rules/daily.ts';
 import { changeTip, checkChange, fareFor, paymentFor, streakBonus, streakMult } from '../rules/fare.ts';
 import { applyEvent, claim, fillMissions, missionDone, missionText, startRun as startRunMissions } from '../rules/missions.ts';
@@ -48,11 +50,13 @@ import {
   type SaveData,
   type ShopKind,
 } from '../rules/progress.ts';
+import { RACES, placeText, raceById, racePrize, raceTime, raceXp, unlockedRaces, type RaceDef } from '../rules/races.ts';
 import { getRoute, placements, stopSerial, stretchAt } from '../rules/route.ts';
-import { clamp, clockText, lerp, metres, mod, money, pick, rand, weighted } from '../rules/util.ts';
+import { clamp, clockText, lerp, metres, mod, money, mulberry32, pick, rand, weighted, type Rng } from '../rules/util.ts';
 import { ChangePanel } from '../ui/change.ts';
-import { Hud, type AlertTone } from '../ui/hud.ts';
+import { Hud, type AlertTone, type RaceHudData } from '../ui/hud.ts';
 import { Screens, type GarageItem, type GarageTab, type OverModel } from '../ui/screens.ts';
+import { chooseLane, type Body } from './drivers.ts';
 import { Traffic, type Hazard, type TrafficEnv, type Vehicle, type Walker } from './traffic.ts';
 
 const BUS = { w: 2.3, l: 5.6 } as const;
@@ -61,7 +65,7 @@ const AHEAD = 900;
 const BEHIND = 70;
 
 type Mode = 'loading' | 'title' | 'garage' | 'play' | 'paused' | 'ending' | 'over';
-type EndReason = 'crash' | 'fuel' | 'quit';
+type EndReason = 'crash' | 'fuel' | 'quit' | 'finish';
 
 interface Rider {
   readonly kind: PaxKind;
@@ -142,6 +146,59 @@ interface ChangeTask {
   readonly due: number;
 }
 
+interface Racer {
+  readonly v: Vehicle;
+  readonly car: CarDef;
+  readonly name: string;
+  /** Share of the car's top speed this driver holds. */
+  readonly skill: number;
+  readonly color: string;
+  think: number;
+  finishT: number | null;
+}
+interface RaceState {
+  readonly def: RaceDef;
+  readonly car: CarDef;
+  /** Absolute positions of the start and finish lines. */
+  readonly start: number;
+  readonly finish: number;
+  readonly racers: Racer[];
+  readonly gates: { group: THREE.Group; at: number }[];
+  phase: 'grid' | 'go';
+  countdown: number;
+  /** Last countdown number shown. */
+  shown: number;
+  /** Race clock from GO. */
+  t: number;
+  place: number;
+  finishT: number;
+  rank: number;
+}
+
+/** Racer paints, kept distinct from traffic paints so a racer's car (and its name tag) never joins the traffic pool. */
+const RACER_PAINTS: readonly [number, string][] = [
+  [0xd7263d, '#d7263d'],
+  [0x1b998b, '#1b998b'],
+  [0x3c91e6, '#3c91e6'],
+  [0x9b5de5, '#9b5de5'],
+  [0xf2c511, '#f2c511'],
+  [0xf4f4f0, '#f4f4f0'],
+];
+/** Rough colour difference, 0–3, used to keep racers from wearing the player's colour. */
+const colorGap = (a: string, b: string): number => {
+  const ca = new THREE.Color(a);
+  const cb = new THREE.Color(b);
+  return Math.abs(ca.r - cb.r) + Math.abs(ca.g - cb.g) + Math.abs(ca.b - cb.b);
+};
+const RACER_NAMES = ['Tunde', 'Ada', 'Kemi', 'Musa', 'Ifeanyi', 'Sade', 'Bola', 'Femi', 'Ngozi', 'Yusuf', 'Chioma', 'Dayo'];
+/** Grid slots for the other racers: lane and metres behind the line. The player starts in lane 2 on the line. */
+const GRID: readonly [number, number][] = [
+  [1, 0],
+  [3, 8],
+  [0, 8],
+  [2, 16],
+];
+
 interface Run {
   t: number;
   hour: number;
@@ -190,6 +247,9 @@ interface Run {
   endReason: EndReason;
   endT: number;
   readonly startDist: number;
+  /** Cool-down after rubbing against a racer or rival. */
+  bumpT: number;
+  readonly race: RaceState | null;
 }
 
 const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
@@ -211,13 +271,22 @@ export class Game {
   private dist = 0;
   private speed = 8;
   private lane = 1;
+  private prevLane = 1;
   private x = laneX(1);
   private y = 0;
   private vy = 0;
   private air = false;
   private shake = 0;
   private run: Run | null = null;
-  private garageTab: GarageTab = 'paint';
+  private garageTab: GarageTab = 'car';
+  private garageFrom: 'title' | 'race' = 'title';
+  /** What the player is driving: the danfo or a car id, its collision size and lane-change quickness. */
+  private ride = 'danfo';
+  private rideMesh: THREE.Group | null = null;
+  private rideKey = '';
+  private size: { w: number; l: number } = BUS;
+  private handling = 1;
+  private lastKind: 'run' | 'race' = 'run';
   private garageMsg = '';
   private dailyText: string | null = null;
   private lastT = 0;
@@ -256,8 +325,12 @@ export class Game {
     this.screens = new Screens({
       start: () => this.startRun(),
       selectRoute: (id) => this.selectRoute(id),
-      open: (screen) => (screen === 'garage' ? this.openGarage() : screen === 'missions' ? this.openMissions() : this.screens.help()),
-      home: () => this.showTitle(),
+      open: (screen) => (screen === 'garage' ? this.openGarage() : screen === 'missions' ? this.openMissions() : screen === 'race' ? this.openRaces() : this.screens.help()),
+      selectRace: (id) => this.selectRace(id),
+      pickCar: (id) => this.pickCar(id),
+      startRace: () => this.startRace(),
+      preview: (id) => this.previewCar(id),
+      home: () => (this.screens.current === 'garage' && this.garageFrom === 'race' ? this.openRaces() : this.showTitle()),
       toggleAuto: () => {
         this.save.settings.autoChange = !this.save.settings.autoChange;
         this.persist();
@@ -266,10 +339,11 @@ export class Game {
       toggleSound: () => this.toggleMute(),
       resume: () => this.resume(),
       quit: () => this.endRun('quit'),
-      again: () => this.startRun(),
+      again: () => (this.lastKind === 'race' ? this.startRace() : this.startRun()),
       garageTab: (tab) => {
         this.garageTab = tab;
         this.garageMsg = '';
+        this.showRide(tab === 'car' ? this.save.equip.car : 'danfo');
         this.screens.garage(this.garageModel());
       },
       buy: (kind, id) => this.buy(kind, id),
@@ -337,10 +411,17 @@ export class Game {
   }
 
   private showTitle(): void {
+    this.clearRace();
     this.mode = 'title';
     this.run = null;
     this.hud.show(false);
     this.change.hide();
+    this.showRide('danfo');
+    // A race may have left the world on another route.
+    if (this.route.id !== this.routeFromSave().id) {
+      this.route = this.routeFromSave();
+      this.resetWorld(this.dist);
+    }
     const lv = levelInfo(this.save.xp);
     const unlocked = unlockedRoutes(lv.level);
     this.screens.title({
@@ -380,11 +461,15 @@ export class Game {
   }
 
   private openGarage(): void {
+    this.garageFrom = this.screens.current === 'race' ? 'race' : 'title';
+    if (this.garageFrom === 'race') this.garageTab = 'car';
+    this.clearRace();
     this.mode = 'garage';
     this.hud.show(false);
     this.change.hide();
     this.speed = 0;
     this.garageMsg = '';
+    this.showRide(this.garageTab === 'car' ? this.save.equip.car : 'danfo');
     this.screens.garage(this.garageModel());
   }
 
@@ -399,7 +484,9 @@ export class Game {
     const bank = this.save.bank;
     const s = this.save;
     let items: GarageItem[];
-    if (this.garageTab === 'paint')
+    if (this.garageTab === 'car')
+      items = CARS.map((c) => ({ kind: 'car', id: c.id, name: c.name, detail: carSummary(c, c.id === 'danfo' ? bodyMax(s) : c.hits), swatch: c.swatch, price: c.price, owned: s.owned.car.includes(c.id), equipped: s.equip.car === c.id, lockedLevel: level < c.level ? c.level : null, affordable: bank >= c.price }));
+    else if (this.garageTab === 'paint')
       items = PAINTS.map((p) => ({ kind: 'paint', id: p.id, name: p.name, detail: p.price ? `₦${p.price.toLocaleString('en-NG')}` : 'Free', swatch: `linear-gradient(90deg, ${hex(p.body)} 70%, ${hex(p.stripe)} 70%)`, price: p.price, owned: s.owned.paint.includes(p.id), equipped: s.equip.paint === p.id, lockedLevel: level < p.level ? p.level : null, affordable: bank >= p.price }));
     else if (this.garageTab === 'sticker')
       items = STICKERS.map((st) => ({ kind: 'sticker', id: st.id, name: st.text, detail: 'Rear window sticker', price: st.price, owned: s.owned.sticker.includes(st.id), equipped: s.equip.sticker === st.id, lockedLevel: level < st.level ? st.level : null, affordable: bank >= st.price }));
@@ -419,8 +506,9 @@ export class Game {
     if (result.ok) {
       equipItem(this.save, kind, id);
       this.applyLook();
+      if (kind === 'car') this.showRide(id);
       this.sound.fare();
-      this.garageMsg = 'Bought and fitted.';
+      this.garageMsg = kind === 'car' ? 'Bought! It is now your race car.' : 'Bought and fitted.';
       this.persist();
     } else this.garageMsg = result.reason === 'money' ? 'Not enough money in the bank yet.' : result.reason === 'level' ? 'Reach a higher level first.' : '';
     this.screens.garage(this.garageModel());
@@ -431,7 +519,8 @@ export class Game {
     if (equipItem(this.save, kind, id)) {
       this.applyLook();
       if (kind === 'horn') this.sound.previewHorn(this.save.equip.horn);
-      this.garageMsg = 'Fitted.';
+      if (kind === 'car') this.showRide(id);
+      this.garageMsg = kind === 'car' ? 'This is your race car now.' : 'Fitted.';
       this.persist();
     }
     this.screens.garage(this.garageModel());
@@ -456,6 +545,31 @@ export class Game {
     this.sound.horn = this.save.equip.horn;
   }
 
+  /** Put the danfo or one of the player's cars on the road, sized for collisions. */
+  private showRide(id: string): void {
+    const car = carById(id);
+    this.ride = car.id;
+    this.handling = 1;
+    if (car.model === 'danfo') {
+      this.bus.group.visible = true;
+      if (this.rideMesh) this.rideMesh.visible = false;
+      this.bus.group.add(this.stage.busLight, this.stage.busLight.target);
+      this.size = BUS;
+      return;
+    }
+    const key = `${car.id}:${carModelsReady() ? '3d' : 'box'}`;
+    if (!this.rideMesh || this.rideKey !== key) {
+      this.rideMesh?.removeFromParent();
+      this.rideMesh = makeVehicle(car.model, car.paint);
+      this.rideKey = key;
+      this.stage.scene.add(this.rideMesh);
+    }
+    this.rideMesh.visible = true;
+    this.bus.group.visible = false;
+    this.rideMesh.add(this.stage.busLight, this.stage.busLight.target);
+    this.size = MODEL_SIZE[car.model];
+  }
+
   private toggleMute(): void {
     this.save.settings.muted = !this.save.settings.muted;
     this.sound.setMuted(this.save.settings.muted);
@@ -470,7 +584,8 @@ export class Game {
   }
 
   // ---------- World reset ----------
-  private resetWorld(at: number): void {
+  /** Clear the road and start a fresh lap of the route; `runStart` is where the route begins. */
+  private resetWorld(runStart: number, rng: Rng = Math.random): void {
     for (const s of this.stops.values()) this.releaseStop(s);
     for (const s of this.stations.values()) this.releaseStation(s);
     for (const j of this.junctions.values()) this.releaseJunction(j);
@@ -481,9 +596,9 @@ export class Game {
     this.junctions.clear();
     this.tolls.clear();
     this.cameras.clear();
-    this.runStart = at;
-    this.traffic.reset(at);
-    this.tiles.reset(at, this.tileCtx());
+    this.runStart = runStart;
+    this.traffic.reset(this.dist, rng);
+    this.tiles.reset(this.dist, this.tileCtx());
   }
 
   // ---------- Run lifecycle ----------
@@ -496,6 +611,9 @@ export class Game {
       return;
     }
     this.screens.hideAll();
+    this.clearRace();
+    this.lastKind = 'run';
+    this.showRide('danfo');
     this.route = this.routeFromSave();
     this.resetWorld(this.dist);
     const level = this.level();
@@ -551,6 +669,8 @@ export class Game {
       endReason: 'quit',
       endT: 0,
       startDist: this.dist,
+      bumpT: 0,
+      race: null,
     };
     this.speed = Math.max(this.speed, 8);
     this.lane = 1;
@@ -558,6 +678,7 @@ export class Game {
     this.y = 0;
     this.mode = 'play';
     this.hud.show(true);
+    this.hud.racing(false);
     this.view.focus({ preventScroll: true });
   }
 
@@ -567,6 +688,7 @@ export class Game {
     this.setBrake(false);
     this.setGas(false);
     this.sound.hornOff();
+    this.sound.engineOff();
     this.screens.pause(this.save.settings.muted);
   }
 
@@ -587,6 +709,7 @@ export class Game {
     this.setBrake(false);
     this.setGas(false);
     this.sound.hornOff();
+    this.sound.engineOff();
     this.change.hide();
     this.screens.hideAll();
     this.mode = 'ending';
@@ -596,6 +719,10 @@ export class Game {
   private finishRun(): void {
     const r = this.run;
     if (!r) return;
+    if (r.race) {
+      this.finishRace(r, r.race);
+      return;
+    }
     this.mode = 'over';
     this.hud.show(false);
     this.change.hide();
@@ -618,11 +745,15 @@ export class Game {
     s.stats.metres += driven;
     this.persist();
 
-    const unlocked = ROUTES.filter((rt) => rt.unlockLevel > before && rt.unlockLevel <= after).map((rt) => rt.name);
+    const unlocked = [
+      ...ROUTES.filter((rt) => rt.unlockLevel > before && rt.unlockLevel <= after).map((rt) => `route ${rt.name}`),
+      ...RACES.filter((rc) => rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
+    ];
     const reasons: Record<EndReason, [string, string]> = {
       crash: ['Bodywork finished', 'Too many crashes'],
       fuel: ['Fuel finish!', 'The tank ran dry'],
       quit: ['Run ended', 'You parked for the day'],
+      finish: ['Run ended', 'You crossed the line'],
     };
     const [title, reason] = reasons[r.endReason];
     const model: OverModel = {
@@ -639,7 +770,7 @@ export class Game {
       net: money(r.cash + rewards.bank),
       bank: money(s.bank),
       missions: r.missionsDone.map((m) => missionText(m)),
-      levelUp: after > before ? `Level ${after}!${unlocked.length ? ` New route: ${unlocked.join(', ')}.` : ''} +${runXp + rewards.xp} XP` : `+${runXp + rewards.xp} XP`,
+      levelUp: after > before ? `Level ${after}!${unlocked.length ? ` New ${unlocked.join(', new ')}.` : ''} +${runXp + rewards.xp} XP` : `+${runXp + rewards.xp} XP`,
       best: newBest && r.cash > 0 ? 'New best run!' : null,
     };
     this.screens.over(model);
@@ -657,6 +788,7 @@ export class Game {
   laneChange(dir: -1 | 1): void {
     if (this.mode !== 'play') return;
     if (this.run?.parked) this.unpark();
+    this.prevLane = this.lane;
     this.lane = clamp(this.lane + dir, 0, LANES - 1);
   }
 
@@ -777,18 +909,22 @@ export class Game {
       this.tiles.update(this.dist, this.tileCtx());
     }
     this.updateSky(dt);
-    this.updateBusMesh(dt);
+    this.updateRideMesh(dt);
     this.updateCamera(dt);
     if (r && (this.mode === 'play' || this.mode === 'ending')) {
-      this.hud.update(this.hudData(r));
+      if (r.race) this.hud.updateRace(this.raceHud(r, r.race));
+      else {
+        this.hud.update(this.hudData(r));
+        this.updateChangePanel(r);
+      }
       this.hud.tick(dt);
-      this.updateChangePanel(r);
     }
+    if (this.mode === 'play' && r?.race) this.sound.engine(this.speed / r.race.car.top, r.gas, r.race.car.electric);
     this.stage.render();
   }
 
   private updateMotion(dt: number): void {
-    this.x += (laneX(this.lane) - this.x) * Math.min(1, dt * 11);
+    this.x += (laneX(this.lane) - this.x) * Math.min(1, dt * 11 * this.handling);
     if (this.air) {
       this.vy -= TUNING.gravity * dt;
       this.y += this.vy * dt;
@@ -839,10 +975,15 @@ export class Game {
 
   // ---------- Play update ----------
   private updatePlay(dt: number, r: Run): void {
+    if (r.race) {
+      this.updateRace(dt, r, r.race);
+      return;
+    }
     r.t += dt;
     r.hour = this.event.startHour + r.t * TUNING.clockRate;
     this.updateWeather(dt, r);
     r.invuln = Math.max(0, r.invuln - dt);
+    r.bumpT = Math.max(0, r.bumpT - dt);
     r.potholeT = Math.max(0, r.potholeT - dt);
     this.shake = Math.max(0, this.shake - dt * 1.8);
 
@@ -925,6 +1066,347 @@ export class Game {
 
   private earn(r: Run, amount: number): void {
     r.cash += amount;
+  }
+
+  // ---------- Races ----------
+  private racesModel() {
+    const level = this.level();
+    const s = this.save;
+    return {
+      bank: money(s.bank),
+      level,
+      races: RACES.map((rc) => {
+        const best = s.races[rc.id]?.best ?? 0;
+        return {
+          id: rc.id,
+          name: rc.name,
+          path: `${rc.from} → ${rc.to} · ${metres(rc.length)}`,
+          blurb: rc.blurb,
+          meta: `1st ${money(rc.prizes[0])}${best ? ` · Best ${raceTime(best)}` : ''}`,
+          locked: rc.level > level,
+          unlockLevel: rc.level,
+          selected: rc.id === s.race,
+        };
+      }),
+      cars: s.owned.car.map((id) => {
+        const c = carById(id);
+        return { id, name: c.name, detail: carSummary(c, id === 'danfo' ? bodyMax(s) : c.hits), swatch: c.swatch, selected: id === s.equip.car };
+      }),
+      moreCars: s.owned.car.length < CARS.length,
+    };
+  }
+
+  private openRaces(): void {
+    this.clearRace();
+    if (this.mode !== 'title') this.showTitle();
+    if (!unlockedRaces(this.level()).includes(this.save.race)) this.save.race = 'ikorodu';
+    this.showRide(this.save.equip.car);
+    this.screens.races(this.racesModel());
+  }
+
+  private selectRace(id: string): void {
+    if (!unlockedRaces(this.level()).includes(id)) return;
+    this.save.race = id;
+    this.persist();
+    this.screens.races(this.racesModel());
+  }
+
+  private pickCar(id: string): void {
+    if (!equipItem(this.save, 'car', id)) return;
+    this.persist();
+    this.showRide(id);
+    this.screens.races(this.racesModel());
+  }
+
+  private previewCar(id: string): void {
+    this.showRide(id);
+  }
+
+  /** Line up on the grid: the player on the line in lane 2, four rivals around them, traffic laid out to the finish. */
+  private startRace(): void {
+    this.sound.unlock();
+    const def = raceById(this.save.race);
+    if (def.level > this.level()) return;
+    const car = carById(this.save.equip.car);
+    this.screens.hideAll();
+    this.clearRace();
+    this.lastKind = 'race';
+    this.route = getRoute(def.route);
+    const start = this.dist;
+    const finish = start + def.length;
+    const rng = mulberry32(def.seed);
+    this.resetWorld(start - def.start, rng);
+    fillMissions(this.save.missions, this.level(), Math.random);
+    startRunMissions(this.save.missions);
+    this.showRide(car.id);
+    this.handling = car.handling;
+    const hits = car.id === 'danfo' ? bodyMax(this.save) : car.hits;
+    const race: RaceState = { def, car, start, finish, racers: [], gates: [], phase: 'grid', countdown: 3.6, shown: 4, t: 0, place: 0, finishT: 0, rank: 5 };
+    this.run = {
+      t: 0,
+      hour: def.hour,
+      braking: false,
+      gas: false,
+      parked: null,
+      body: hits,
+      bodyMax: hits,
+      invuln: 0,
+      fuel: 1,
+      tank: 1,
+      seats: 0,
+      brakeFactor: car.id === 'danfo' ? brakeFactor(this.save) : 1.25,
+      fuelWarned: false,
+      emptyT: 0,
+      cash: 0,
+      fares: 0,
+      tips: 0,
+      notes: 0,
+      fuelSpent: 0,
+      fines: 0,
+      tolls: 0,
+      streak: 0,
+      shieldUsed: false,
+      complaints: 0,
+      riders: [],
+      delivered: 0,
+      served: 0,
+      correctChange: 0,
+      changeQueue: [],
+      changeGiven: [],
+      changeT: 0,
+      loadT: 0,
+      rain: 0,
+      rainTarget: 0,
+      haze: 0,
+      nextRainAt: Number.POSITIVE_INFINITY,
+      rainUntil: 0,
+      cleanMetres: 0,
+      nightAcc: 0,
+      potholeT: 0,
+      brtT: 0,
+      darkAnnounced: true,
+      bridgeFrom: null,
+      missionsDone: [],
+      endReason: 'quit',
+      endT: 0,
+      startDist: start,
+      bumpT: 0,
+      race,
+    };
+    for (const [word, at] of [['START', start + this.size.l / 2 + 0.6], ['FINISH', finish]] as const) {
+      const group = makeRaceGate(word);
+      this.stage.scene.add(group);
+      race.gates.push({ group, at });
+    }
+    const names = [...RACER_NAMES];
+    const paints = RACER_PAINTS.filter(([, css]) => colorGap(css, car.swatch) > 0.45);
+    def.field.forEach((id, i) => {
+      const slot = GRID[i];
+      const paint = paints[i];
+      if (!slot || !paint) return;
+      const rc = carById(id);
+      const v = this.traffic.addVehicle('car', slot[0], start - slot[1], 0, false, { model: rc.model as ModelId, color: paint[0] });
+      v.driver = 'racer';
+      v.accel = rc.accel;
+      v.steer = 5 * rc.handling;
+      const name = names.splice(Math.floor(rng() * names.length), 1)[0] ?? 'Racer';
+      v.mesh.add(makeNameTag(name, paint[1], MODEL_SIZE[rc.model as ModelId].h));
+      race.racers.push({ v, car: rc, name, skill: rand(def.skill[0], def.skill[1], rng), color: paint[1], think: 0, finishT: null });
+    });
+    this.traffic.prespawn(this.trafficEnv(), finish + 300);
+    this.speed = 0;
+    this.lane = this.prevLane = 2;
+    this.x = laneX(2);
+    this.air = false;
+    this.y = 0;
+    this.mode = 'play';
+    this.hud.show(true);
+    this.hud.racing(true);
+    this.hud.say(`${def.name}: ${metres(def.length)} to the finish`, 'info');
+    this.view.focus({ preventScroll: true });
+  }
+
+  /** Take down the gates and racers of the last race, if any. */
+  private clearRace(): void {
+    const race = this.run?.race;
+    this.sound.engineOff();
+    this.hud.racing(false);
+    if (!race) return;
+    for (const g of race.gates) g.group.removeFromParent();
+    race.gates.length = 0;
+    for (const rc of race.racers) {
+      removeNameTag(rc.v.mesh);
+      const i = this.traffic.vehicles.indexOf(rc.v);
+      if (i >= 0) this.traffic.removeVehicle(i);
+    }
+    race.racers.length = 0;
+  }
+
+  private updateRace(dt: number, r: Run, race: RaceState): void {
+    r.t += dt;
+    r.hour = race.def.hour + r.t * TUNING.clockRate;
+    r.invuln = Math.max(0, r.invuln - dt);
+    r.bumpT = Math.max(0, r.bumpT - dt);
+    this.shake = Math.max(0, this.shake - dt * 1.8);
+    const car = race.car;
+    if (race.phase === 'grid') {
+      race.countdown -= dt;
+      const n = Math.ceil(race.countdown);
+      if (n < race.shown && n >= 1 && n <= 3) {
+        race.shown = n;
+        this.hud.countdown(String(n));
+        this.sound.countBeep(false);
+      }
+      if (race.countdown <= 0) {
+        race.phase = 'go';
+        this.hud.countdown('GO!');
+        this.sound.countBeep(true);
+        this.hud.say(pick(LINES.raceGo), 'conductor');
+      }
+      this.speed = 0;
+    } else {
+      race.t += dt;
+      // Hold GAS for full speed; off the gas the car eases to about three-quarters.
+      const target = r.braking ? 0 : r.gas ? car.top : car.top * 0.72;
+      const brake = TUNING.brake * r.brakeFactor;
+      if (this.speed > target) this.speed = Math.max(target, this.speed - (r.braking ? brake : TUNING.coast) * dt);
+      else this.speed = Math.min(target, this.speed + car.accel * (1 - 0.55 * (this.speed / car.top) ** 2) * dt);
+    }
+    this.dist += this.speed * dt;
+    this.driveRacers(dt, race);
+    const rank = this.racePlace(race);
+    if (rank === 1 && race.rank > 1 && race.t > 4) this.hud.say(pick(LINES.raceLead), 'info');
+    race.rank = rank;
+    if (this.dist >= race.finish) {
+      race.place = rank;
+      race.finishT = race.t;
+      this.hud.say(pick(LINES.raceFinish), 'info');
+      this.endRun('finish');
+      return;
+    }
+    this.collide(r);
+  }
+
+  /** Each racer holds its share of top speed and changes lanes around slower traffic. */
+  private driveRacers(dt: number, race: RaceState): void {
+    const you: Body = { d: this.dist, x: this.x, l: this.size.l, v: this.speed };
+    for (const rc of race.racers) {
+      const v = rc.v;
+      if (rc.finishT === null && v.d >= race.finish) rc.finishT = race.t;
+      if (race.phase !== 'go') {
+        v.aim = 0;
+        continue;
+      }
+      // A gentle pull towards the player: racers far behind push a little, racers far ahead ease off.
+      const band = 1 + clamp((this.dist - v.d) / 1500, -0.07, 0.07);
+      v.aim = rc.finishT !== null ? 14 : rc.car.top * rc.skill * band;
+      rc.think -= dt;
+      if (rc.think > 0) continue;
+      rc.think = 0.2;
+      const lane = chooseLane(v, this.traffic, you, 22 + v.v * 1.3);
+      if (lane !== v.lane) {
+        v.lane = lane;
+        rc.think = 0.9 / rc.car.handling;
+      }
+    }
+  }
+
+  /** The player's place right now: one plus everyone who finished or is ahead. */
+  private racePlace(race: RaceState): number {
+    return 1 + race.racers.filter((rc) => rc.finishT !== null || rc.v.d > this.dist).length;
+  }
+
+  /** Rubbing against a racer or rival: both lose speed, nobody loses bodywork. */
+  private bump(v: Vehicle): void {
+    const r = this.run;
+    if (!r || r.bumpT > 0) return;
+    r.bumpT = 0.7;
+    const sideBySide = Math.abs(v.d - this.dist) < (v.l + this.size.l) / 2 - 1.2;
+    if (sideBySide) this.lane = this.prevLane;
+    else if (v.d < this.dist) v.d = Math.min(v.d, this.dist - (v.l + this.size.l) / 2 - 0.2);
+    else this.speed = Math.min(this.speed * 0.8, v.v * 0.9);
+    this.speed *= 0.85;
+    v.v *= 0.75;
+    this.shake = Math.max(this.shake, 0.3);
+    this.sound.thud();
+    this.hud.say(pick(LINES.raceBump), 'passenger');
+  }
+
+  private raceHud(r: Run, race: RaceState): RaceHudData {
+    const span = race.finish - race.start;
+    const pct = (d: number): number => clamp((d - race.start) / span, 0, 1);
+    return {
+      place: placeText(race.place || race.rank),
+      of: `/${race.racers.length + 1}`,
+      time: raceTime(race.place ? race.finishT : race.t),
+      togo: metres(Math.max(0, race.finish - this.dist)),
+      body: Math.max(0, r.body),
+      bodyMax: r.bodyMax,
+      speedKmh: this.speed * 3.6,
+      track: [...race.racers.map((rc) => ({ pct: pct(rc.v.d), color: rc.color, you: false })), { pct: pct(this.dist), color: race.car.swatch, you: true }],
+    };
+  }
+
+  private finishRace(r: Run, race: RaceState): void {
+    this.mode = 'over';
+    this.hud.show(false);
+    this.sound.engineOff();
+    const s = this.save;
+    const def = race.def;
+    const finished = r.endReason === 'finish';
+    const place = finished ? race.place : 0;
+    const prize = racePrize(def, place);
+    const before = levelInfo(s.xp).level;
+    if (place === 1) this.emit('raceWin', 1);
+    s.bank += prize;
+    const rewards = claim(s.missions, before, Math.random);
+    s.bank += rewards.bank;
+    const xp = raceXp(place);
+    s.xp += xp + rewards.xp;
+    const after = levelInfo(s.xp).level;
+    fillMissions(s.missions, after, Math.random);
+    const rec = s.races[def.id] ?? { best: 0, wins: 0 };
+    const newBest = finished && (rec.best === 0 || race.finishT < rec.best);
+    if (newBest) rec.best = race.finishT;
+    if (place === 1) rec.wins += 1;
+    s.races[def.id] = rec;
+    s.stats.races += 1;
+    if (place === 1) s.stats.wins += 1;
+    this.persist();
+
+    // Finishers by time, then everyone still racing by distance; a player who did not finish goes last.
+    const order = (e: { time: number | null; d: number; you: boolean }): number => (e.time !== null ? e.time : e.you ? 1e9 : 1e6 - e.d);
+    const field = [
+      { name: 'You', car: race.car.name, time: finished ? race.finishT : null, d: this.dist, you: true },
+      ...race.racers.map((rc) => ({ name: rc.name, car: rc.car.name, time: rc.finishT, d: rc.v.d, you: false })),
+    ].sort((a, b) => order(a) - order(b));
+    const unlocked = [
+      ...ROUTES.filter((rt) => rt.unlockLevel > before && rt.unlockLevel <= after).map((rt) => `route ${rt.name}`),
+      ...RACES.filter((rc) => rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
+    ];
+    const title = place === 1 ? 'You win!' : place > 0 ? `${placeText(place)} place` : r.endReason === 'crash' ? 'Wrecked!' : 'Race abandoned';
+    this.screens.raceOver({
+      title,
+      reason: `${def.name} · ${race.car.name}`,
+      standings: field.map((e, i) => ({
+        place: e.you && !finished ? 'DNF' : placeText(i + 1),
+        name: e.name,
+        car: e.car,
+        time: e.time !== null ? raceTime(e.time) : e.you ? (r.endReason === 'crash' ? 'Wrecked' : 'Quit') : '—',
+        you: e.you,
+      })),
+      lines: [
+        ['Your time', finished ? raceTime(race.finishT) : '—'],
+        ['Best time', rec.best ? raceTime(rec.best) : '—'],
+        ['Prize', money(prize)],
+        ['Mission rewards', money(rewards.bank)],
+      ],
+      net: money(prize + rewards.bank),
+      bank: money(s.bank),
+      missions: r.missionsDone.map((m) => missionText(m)),
+      levelUp: after > before ? `Level ${after}!${unlocked.length ? ` New ${unlocked.join(', new ')}.` : ''} +${xp + rewards.xp} XP` : `+${xp + rewards.xp} XP`,
+      best: newBest ? 'New best time!' : null,
+    });
   }
 
   // ---------- Bus stops ----------
@@ -1190,7 +1672,7 @@ export class Game {
 
   // ---------- Junction with traffic warden ----------
   private updateJunctions(dt: number, r: Run): void {
-    const front = this.dist + BUS.l / 2;
+    const front = this.dist + this.size.l / 2;
     for (const j of this.junctions.values()) {
       if (j.resolved) continue;
       const ahead = j.at - front;
@@ -1235,7 +1717,7 @@ export class Game {
 
   // ---------- Toll gate ----------
   private updateTolls(r: Run): void {
-    const front = this.dist + BUS.l / 2;
+    const front = this.dist + this.size.l / 2;
     for (const t of this.tolls.values()) {
       if (t.resolved) continue;
       const ahead = t.at - front;
@@ -1266,7 +1748,7 @@ export class Game {
   }
 
   private updateCameras(r: Run): void {
-    const front = this.dist + BUS.l / 2;
+    const front = this.dist + this.size.l / 2;
     for (const c of this.cameras.values()) {
       if (c.resolved || front < c.at) continue;
       c.resolved = true;
@@ -1299,16 +1781,18 @@ export class Game {
       if (v.flung) continue;
       const dz = Math.abs(v.d - D);
       const dx = Math.abs(v.x - this.x);
-      const hit = v.cross ? dz < (v.w + BUS.l) / 2 - 0.3 && dx < (v.l + BUS.w) / 2 - 0.3 : dz < (v.l + BUS.l) / 2 - 0.35 && dx < (v.w + BUS.w) / 2 - 0.3;
-      if (hit) this.crash(v);
+      const { w, l } = this.size;
+      const hit = v.cross ? dz < (v.w + l) / 2 - 0.3 && dx < (v.l + w) / 2 - 0.3 : dz < (v.l + l) / 2 - 0.35 && dx < (v.w + w) / 2 - 0.3;
+      if (hit && v.driver === 'traffic') this.crash(v);
+      else if (hit) this.bump(v);
     }
     for (const h of this.traffic.hazards) {
       if (h.flung) continue;
       const dz = Math.abs(h.d - D);
       const dx = Math.abs(h.x - this.x);
       if (h.kind === 'barrier') {
-        if (dz < (h.l + BUS.l) / 2 - 1 && dx < (h.w + BUS.w) / 2 - 0.35 && this.y < 0.5) this.crash(h);
-      } else if (!h.hit && dz < (h.l + BUS.l) / 2 - 1 && dx < 1.4 && this.y < 0.05) {
+        if (dz < (h.l + this.size.l) / 2 - 1 && dx < (h.w + this.size.w) / 2 - 0.35 && this.y < 0.5) this.crash(h);
+      } else if (!h.hit && dz < (h.l + this.size.l) / 2 - 1 && dx < 1.4 && this.y < 0.05) {
         h.hit = true;
         for (const rd of r.riders) rd.smooth = false;
         if (h.kind === 'puddle') {
@@ -1327,7 +1811,7 @@ export class Game {
     }
     for (let i = this.traffic.notes.length - 1; i >= 0; i--) {
       const n = this.traffic.notes[i];
-      if (n && Math.abs(n.d - D) < BUS.l / 2 + 0.4 && Math.abs(n.x - this.x) < BUS.w / 2 + 0.5) {
+      if (n && Math.abs(n.d - D) < this.size.l / 2 + 0.4 && Math.abs(n.x - this.x) < this.size.w / 2 + 0.5) {
         this.earn(r, TUNING.noteValue);
         r.notes += TUNING.noteValue;
         this.emit('notesRun', 1);
@@ -1341,7 +1825,7 @@ export class Game {
   private walkerContact(r: Run, w: Walker): void {
     const dz = Math.abs(w.d - this.dist);
     const dx = Math.abs(w.x - this.x);
-    if (w.kind === 'hawker' && !w.sold && r.riders.length > 0 && dz < BUS.l / 2 + 1 && dx < 3.4 && this.speed < 7) {
+    if (w.kind === 'hawker' && !w.sold && r.riders.length > 0 && dz < this.size.l / 2 + 1 && dx < 3.4 && this.speed < 7) {
       w.sold = true;
       const tip = Math.min(400, 30 * r.riders.length);
       this.earn(r, tip);
@@ -1351,10 +1835,10 @@ export class Game {
       this.hud.popup(`+${money(tip)}`, 'hawker sales');
       this.sound.coin();
     }
-    if (!w.scared && dz < BUS.l / 2 + 0.4 && dx < BUS.w / 2 + 0.35 && this.speed > 3) {
+    if (!w.scared && dz < this.size.l / 2 + 0.4 && dx < this.size.w / 2 + 0.35 && this.speed > 3) {
       w.scared = true;
       w.dodge = 0.7;
-      this.loseStreak('Scare!');
+      if (!r.race) this.loseStreak('Scare!');
       this.hud.say(pick(LINES.scare), 'passenger');
       this.sound.scare();
     }
@@ -1415,6 +1899,8 @@ export class Game {
   }
 
   private syncFeatures(): void {
+    // Races close the road to stops, stations, wardens and tolls.
+    if (this.run?.race) return;
     const from = this.dist - BEHIND;
     const to = this.dist + AHEAD;
     const route = this.route;
@@ -1532,6 +2018,7 @@ export class Game {
     }
     for (const s of this.stations.values()) s.group.position.z = -(s.at - D);
     for (const c of this.cameras.values()) c.group.position.z = -(c.at - D);
+    for (const g of this.run?.race?.gates ?? []) g.group.position.z = -(g.at - D);
     const t = performance.now() / 1000;
     for (const j of this.junctions.values()) {
       j.vis.group.position.z = -(j.at - D);
@@ -1557,22 +2044,29 @@ export class Game {
     const route = this.route;
     const runStart = this.runStart;
     const r = this.run;
+    const race = r?.race ?? null;
     const reserved = [...route.stops.map((s) => s.at), ...route.stations];
+    // In a race, keep traffic from just behind the last car to past the finish so every racer meets it.
+    const tail = race ? Math.min(this.dist, ...race.racers.map((rc) => rc.v.d)) : 0;
     return {
       dist: this.dist,
-      difficulty: r ? clamp((this.dist - r.startDist) / 7000, 0, 1) : 0,
-      trafficMult: this.event.trafficMult,
+      difficulty: race ? 0.35 : r ? clamp((this.dist - r.startDist) / 7000, 0, 1) : 0,
+      trafficMult: race ? 1 : this.event.trafficMult,
       pedestrianMult: this.event.pedestrianMult,
       hawkerMult: this.event.hawkerMult,
       rain: r?.rain ?? 0,
       dark: this.stage.darkness,
       posh: route.posh,
       playing: this.mode === 'play',
+      notes: !race,
+      span: race ? { from: tail - 40, to: race.finish + 400 } : null,
+      player: { d: this.dist, x: this.x, l: this.size.l },
       stretchAt: (d) => {
         const s = stretchAt(route, d - runStart);
         return { kind: s.kind, brt: s.brt === true };
       },
       kerbReserved: (d) => {
+        if (race) return false;
         const local = mod(d - runStart, route.length);
         return reserved.some((at) => local > at - TUNING.zoneBefore - 70 && local < at + TUNING.zoneAfter + 10);
       },
@@ -1582,14 +2076,18 @@ export class Game {
   }
 
   // ---------- Bus, camera, HUD ----------
-  private updateBusMesh(dt: number): void {
-    const g = this.bus.group;
+  private updateRideMesh(dt: number): void {
+    const car = this.ride !== 'danfo' ? this.rideMesh : null;
+    const g = car ?? this.bus.group;
     g.position.set(this.x, this.y, 0);
     const lean = (laneX(this.lane) - this.x) * -0.035;
     g.rotation.z += (lean - g.rotation.z) * Math.min(1, dt * 10);
     const pitch = this.run?.braking && this.speed > 1 ? 0.03 : 0;
     g.rotation.x += (pitch - g.rotation.x) * Math.min(1, dt * 6);
-    for (const w of this.bus.wheels) w.rotation.x -= (this.speed * dt) / 0.45;
+    if (car) {
+      // Car models face the other way inside their group, so their wheels turn the other way.
+      for (const w of car.userData.wheels as THREE.Object3D[]) w.rotation.x += (this.speed * dt) / 0.36;
+    } else for (const w of this.bus.wheels) w.rotation.x -= (this.speed * dt) / 0.45;
     const door = this.bus.door;
     const k = (door.userData.k as number | undefined) ?? 0;
     const target = this.run?.parked ? 1 : 0;
@@ -1608,10 +2106,11 @@ export class Game {
       cam.fov += (45 - cam.fov) * Math.min(1, dt * 3);
       cam.updateProjectionMatrix();
       cam.position.set(this.x + Math.sin(this.orbit) * (portrait ? 11 : 8.5), 3.4, Math.cos(this.orbit) * (portrait ? 11 : 8.5));
-      cam.lookAt(this.x, 1.4, 0);
+      // On phones the garage list covers the lower half, so aim low to lift the car into view.
+      cam.lookAt(this.x, portrait ? -1.8 : 1.4, 0);
       return;
     }
-    const fov = (portrait ? 70 : 58) + (this.mode === 'play' ? (this.speed / TUNING.speedMax) * 7 : 0);
+    const fov = (portrait ? 70 : 58) + (this.mode === 'play' ? Math.min(11, (this.speed / TUNING.speedMax) * 7) : 0);
     if (Math.abs(fov - cam.fov) > 0.05) {
       cam.fov += (fov - cam.fov) * Math.min(1, dt * 3);
       cam.updateProjectionMatrix();

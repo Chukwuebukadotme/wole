@@ -117,3 +117,53 @@ function pickLook(mix: readonly MixEntry[], stretch: StretchKind, posh: number, 
 export const trafficCar = (stretch: StretchKind, posh: number, rng: Rng = Math.random): Look => pickLook(CAR_MIX, stretch, posh, rng);
 /** A lorry, box truck or refuse truck. */
 export const trafficTruck = (stretch: StretchKind, rng: Rng = Math.random): Look => pickLook(TRUCK_MIX, stretch, 0, rng);
+
+// ---------- Cars you can own (for races) ----------
+export type CarClass = 'everyday' | 'suv' | 'luxury' | 'electric' | 'exotic';
+export const CLASS_LABEL: Readonly<Record<CarClass, string>> = { everyday: 'Everyday', suv: 'SUV', luxury: 'Luxury', electric: 'Electric', exotic: 'Exotic' };
+
+export interface CarDef {
+  readonly id: string;
+  readonly name: string;
+  readonly cls: CarClass;
+  readonly model: ModelId | 'danfo';
+  readonly paint: Paint;
+  /** CSS colour for the garage swatch and race HUD. */
+  readonly swatch: string;
+  readonly price: number;
+  readonly level: number;
+  /** Top speed in m/s. */
+  readonly top: number;
+  /** Pull-away in m/s². */
+  readonly accel: number;
+  /** How quickly it changes lanes; the danfo is 1. */
+  readonly handling: number;
+  /** Knocks it can take in a race before it is out. */
+  readonly hits: number;
+  readonly electric: boolean;
+}
+
+export const CARS: readonly CarDef[] = [
+  { id: 'danfo', name: 'Your danfo', cls: 'everyday', model: 'danfo', paint: null, swatch: '#f6b800', price: 0, level: 1, top: 36, accel: 5, handling: 1, hits: 3, electric: false },
+  { id: 'tokunbo', name: 'Tokunbo Saloon', cls: 'everyday', model: 'saloon', paint: C.silver, swatch: '#b8bcc2', price: 12000, level: 1, top: 40, accel: 6, handling: 1.1, hits: 3, electric: false },
+  { id: 'hothatch', name: 'Yaba Hot Hatch', cls: 'everyday', model: 'hatch', paint: C.orange, swatch: '#e67e22', price: 18000, level: 2, top: 42, accel: 7, handling: 1.3, hits: 3, electric: false },
+  { id: 'farmboss', name: 'Farm Boss Pickup', cls: 'suv', model: 'pickup', paint: C.white, swatch: '#eeeeea', price: 22000, level: 2, top: 39, accel: 5.5, handling: 0.95, hits: 5, electric: false },
+  { id: 'bigboy', name: 'Big Boy Jeep', cls: 'suv', model: 'jeep', paint: C.black, swatch: '#1c1e22', price: 35000, level: 3, top: 43, accel: 6, handling: 1, hits: 5, electric: false },
+  { id: 'sunpower', name: 'Sun-Power E-Hatch', cls: 'electric', model: 'ehatch', paint: C.teal, swatch: '#16a085', price: 40000, level: 3, top: 44, accel: 9, handling: 1.2, hits: 3, electric: true },
+  { id: 'banana', name: 'Banana Island SUV', cls: 'luxury', model: 'luxsuv', paint: C.pearl, swatch: '#e8e2d0', price: 70000, level: 4, top: 48, accel: 7, handling: 1.05, hits: 6, electric: false },
+  { id: 'ikoyi', name: 'Ikoyi Coupé', cls: 'luxury', model: 'coupe', paint: C.red, swatch: '#c0392b', price: 90000, level: 5, top: 52, accel: 8, handling: 1.25, hits: 3, electric: false },
+  { id: 'lightning', name: 'Lekki Lightning', cls: 'exotic', model: 'formula', paint: null, swatch: '#e0533d', price: 160000, level: 7, top: 60, accel: 10, handling: 1.45, hits: 3, electric: false },
+  { id: 'atlantic', name: 'Atlantic Hyper-E', cls: 'exotic', model: 'hyper', paint: null, swatch: '#4a5fd0', price: 220000, level: 8, top: 62, accel: 13, handling: 1.5, hits: 3, electric: true },
+];
+
+export function carById(id: string): CarDef {
+  const car = CARS.find((c) => c.id === id);
+  if (!car) throw new Error(`Unknown car ${id}`);
+  return car;
+}
+
+/** Garage line such as "Luxury · 187 km/h · 3 hits"; the danfo's hits come from its upgrades. */
+export function carSummary(car: CarDef, hits = car.hits): string {
+  const cls = car.electric && car.cls !== 'electric' ? `${CLASS_LABEL[car.cls]} electric` : CLASS_LABEL[car.cls];
+  return `${cls} · ${Math.round(car.top * 3.6)} km/h · ${hits} hit${hits === 1 ? '' : 's'}`;
+}

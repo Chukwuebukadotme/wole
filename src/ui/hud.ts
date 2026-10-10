@@ -24,6 +24,18 @@ export interface HudData {
   readonly parked: boolean;
 }
 
+export interface RaceHudData {
+  readonly place: string;
+  readonly of: string;
+  readonly time: string;
+  readonly togo: string;
+  readonly body: number;
+  readonly bodyMax: number;
+  readonly speedKmh: number;
+  /** Everyone's progress from start (0) to finish (1). */
+  readonly track: readonly { pct: number; color: string; you: boolean }[];
+}
+
 export class Hud {
   private readonly root = byId('hud');
   private readonly text = new TextCache();
@@ -49,7 +61,14 @@ export class Hud {
     popups: byId('popups'),
     flash: byId('flash'),
     hop: byId('b-hop'),
+    pos: byId('h-pos'),
+    of: byId('h-of'),
+    time: byId('h-time'),
+    togo: byId('h-togo'),
+    track: byId('h-track'),
+    countdown: byId('countdown'),
   };
+  private marks: HTMLElement[] = [];
   private readonly queue: { text: string; kind: CalloutKind }[] = [];
   private calloutT = 0;
   private bodyKey = '';
@@ -61,10 +80,29 @@ export class Hud {
     if (on) {
       this.text.clear();
       this.bodyKey = this.ridersKey = this.alertsKey = '';
+      this.marks = [];
+      this.el.track.replaceChildren();
     } else {
       this.queue.length = 0;
       this.el.callout.className = 'callout';
     }
+  }
+
+  /** Switch between the danfo run read-outs and the race read-outs. */
+  racing(on: boolean): void {
+    this.root.classList.toggle('racing', on);
+    if (on) this.el.card.hidden = true;
+    this.el.alerts.replaceChildren();
+    this.alertsKey = '';
+    this.el.countdown.className = '';
+  }
+
+  /** Big centred countdown text: "3", "2", "1", "GO!". */
+  countdown(text: string): void {
+    this.el.countdown.textContent = text;
+    this.el.countdown.className = '';
+    void this.el.countdown.offsetWidth;
+    this.el.countdown.className = text === 'GO!' ? 'on go' : 'on';
   }
 
   say(text: string, kind: CalloutKind = 'conductor'): void {
@@ -118,19 +156,7 @@ export class Hud {
     this.el.hop.classList.toggle('go', d.parked);
     this.el.fuel.style.transform = `scaleX(${Math.max(0, Math.min(1, d.fuel)).toFixed(3)})`;
     this.el.fuelChip.classList.toggle('low', d.fuelLow);
-
-    const bodyKey = `${d.body}/${d.bodyMax}`;
-    if (bodyKey !== this.bodyKey) {
-      this.bodyKey = bodyKey;
-      this.el.body.replaceChildren(
-        ...Array.from({ length: d.bodyMax }, (_, i) => {
-          const pip = document.createElement('i');
-          pip.className = i < d.body ? 'pip on' : 'pip';
-          return pip;
-        }),
-      );
-      this.el.body.classList.toggle('low', d.body === 1);
-    }
+    this.bodywork(d.body, d.bodyMax);
     const ridersKey = d.riders.join(',');
     if (ridersKey !== this.ridersKey) {
       this.ridersKey = ridersKey;
@@ -165,5 +191,44 @@ export class Hud {
       this.el.card.classList.toggle('busy', d.stop.busy);
       this.el.card.classList.toggle('here', d.stop.here);
     }
+  }
+
+  updateRace(d: RaceHudData): void {
+    const t = this.text;
+    t.set(this.el.pos, d.place);
+    t.set(this.el.of, d.of);
+    t.set(this.el.time, d.time);
+    t.set(this.el.togo, d.togo);
+    t.set(this.el.speed, String(Math.round(d.speedKmh)));
+    t.set(this.el.hop, 'Hop');
+    this.el.hop.classList.remove('go');
+    this.bodywork(d.body, d.bodyMax);
+    if (this.marks.length !== d.track.length) {
+      this.marks = d.track.map((m) => {
+        const dot = document.createElement('i');
+        dot.style.background = m.color;
+        if (m.you) dot.className = 'you';
+        return dot;
+      });
+      this.el.track.replaceChildren(...this.marks);
+    }
+    d.track.forEach((m, i) => {
+      const dot = this.marks[i];
+      if (dot) dot.style.left = `${(m.pct * 100).toFixed(1)}%`;
+    });
+  }
+
+  private bodywork(body: number, max: number): void {
+    const key = `${body}/${max}`;
+    if (key === this.bodyKey) return;
+    this.bodyKey = key;
+    this.el.body.replaceChildren(
+      ...Array.from({ length: max }, (_, i) => {
+        const pip = document.createElement('i');
+        pip.className = i < body ? 'pip on' : 'pip';
+        return pip;
+      }),
+    );
+    this.el.body.classList.toggle('low', body === 1);
   }
 }

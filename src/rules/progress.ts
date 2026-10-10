@@ -1,3 +1,4 @@
+import { CARS } from './cars.ts';
 import {
   HORNS,
   MISSIONS,
@@ -11,6 +12,7 @@ import {
   type RouteId,
   type UpgradeId,
 } from './data.ts';
+import { RACES } from './races.ts';
 
 export interface MissionState {
   readonly id: MissionEvent;
@@ -25,11 +27,14 @@ export interface SaveData {
   bank: number;
   xp: number;
   best: { cash: number; dist: number };
-  owned: { paint: string[]; sticker: string[]; horn: string[] };
-  equip: { paint: string; sticker: string; horn: HornId };
+  owned: { paint: string[]; sticker: string[]; horn: string[]; car: string[] };
+  equip: { paint: string; sticker: string; horn: HornId; car: string };
   upgrades: Record<UpgradeId, number>;
   missions: MissionState[];
-  stats: { runs: number; delivered: number; metres: number };
+  stats: { runs: number; delivered: number; metres: number; races: number; wins: number };
+  /** Best time in seconds (0 = not finished yet) and wins, per race. */
+  races: Record<string, { best: number; wins: number }>;
+  race: string;
   daily: { lastDay: string; streak: number };
   settings: { autoChange: boolean; muted: boolean };
   route: RouteId;
@@ -42,11 +47,13 @@ export function defaultSave(): SaveData {
     bank: 0,
     xp: 0,
     best: { cash: 0, dist: 0 },
-    owned: { paint: ['eko'], sticker: ['permanent'], horn: ['classic'] },
-    equip: { paint: 'eko', sticker: 'permanent', horn: 'classic' },
+    owned: { paint: ['eko'], sticker: ['permanent'], horn: ['classic'], car: ['danfo'] },
+    equip: { paint: 'eko', sticker: 'permanent', horn: 'classic', car: 'danfo' },
     upgrades: { tank: 0, brakes: 0, body: 0, seats: 0 },
     missions: [],
-    stats: { runs: 0, delivered: 0, metres: 0 },
+    stats: { runs: 0, delivered: 0, metres: 0, races: 0, wins: 0 },
+    races: {},
+    race: 'ikorodu',
     daily: { lastDay: '', streak: 0 },
     settings: { autoChange: false, muted: false },
     route: 'ikorodu',
@@ -77,9 +84,18 @@ export function parseSave(raw: unknown): SaveData {
   const paints = ids(owned.paint, PAINTS.map((p) => p.id), 'eko');
   const stickers = ids(owned.sticker, STICKERS.map((s) => s.id), 'permanent');
   const horns = ids(owned.horn, HORNS.map((h) => h.id), 'classic');
+  const cars = ids(owned.car, CARS.map((c) => c.id), 'danfo');
   const equipPaint = str(equip.paint, 'eko');
   const equipSticker = str(equip.sticker, 'permanent');
   const equipHorn = str(equip.horn, 'classic');
+  const equipCar = str(equip.car, 'danfo');
+  const rawRaces = isRecord(raw.races) ? raw.races : {};
+  const races: SaveData['races'] = {};
+  for (const r of RACES) {
+    const rec = rawRaces[r.id];
+    if (isRecord(rec)) races[r.id] = { best: Math.max(0, num(rec.best, 0)), wins: Math.max(0, Math.floor(num(rec.wins, 0))) };
+  }
+  const race = str(raw.race, 'ikorodu');
   const missionIds = MISSIONS.map((m) => m.id) as readonly string[];
   const missions: MissionState[] = Array.isArray(raw.missions)
     ? raw.missions.flatMap((m): MissionState[] => {
@@ -99,15 +115,24 @@ export function parseSave(raw: unknown): SaveData {
     bank: Math.max(0, num(raw.bank, 0)),
     xp: Math.max(0, num(raw.xp, 0)),
     best: { cash: Math.max(0, num(best.cash, 0)), dist: Math.max(0, num(best.dist, 0)) },
-    owned: { paint: paints, sticker: stickers, horn: horns },
+    owned: { paint: paints, sticker: stickers, horn: horns, car: cars },
     equip: {
       paint: paints.includes(equipPaint) ? equipPaint : 'eko',
       sticker: stickers.includes(equipSticker) ? equipSticker : 'permanent',
       horn: (horns.includes(equipHorn) ? equipHorn : 'classic') as HornId,
+      car: cars.includes(equipCar) ? equipCar : 'danfo',
     },
     upgrades: { tank: upgradeLevel('tank'), brakes: upgradeLevel('brakes'), body: upgradeLevel('body'), seats: upgradeLevel('seats') },
     missions,
-    stats: { runs: Math.max(0, num(stats.runs, 0)), delivered: Math.max(0, num(stats.delivered, 0)), metres: Math.max(0, num(stats.metres, 0)) },
+    stats: {
+      runs: Math.max(0, num(stats.runs, 0)),
+      delivered: Math.max(0, num(stats.delivered, 0)),
+      metres: Math.max(0, num(stats.metres, 0)),
+      races: Math.max(0, num(stats.races, 0)),
+      wins: Math.max(0, num(stats.wins, 0)),
+    },
+    races,
+    race: RACES.some((r) => r.id === race) ? race : 'ikorodu',
     daily: { lastDay: str(daily.lastDay, ''), streak: Math.max(0, num(daily.streak, 0)) },
     settings: { autoChange: bool(settings.autoChange, false), muted: bool(settings.muted, false) },
     route: ROUTES.some((r) => r.id === route) ? (route as RouteId) : 'ikorodu',
@@ -138,12 +163,13 @@ export const bodyMax = (s: SaveData): number => TUNING.baseBody + s.upgrades.bod
 export const brakeFactor = (s: SaveData): number => 1 + 0.15 * s.upgrades.brakes;
 
 // ---------- Garage ----------
-export type ShopKind = 'paint' | 'sticker' | 'horn';
+export type ShopKind = 'paint' | 'sticker' | 'horn' | 'car';
 export type BuyResult = { ok: true } | { ok: false; reason: 'owned' | 'level' | 'money' | 'unknown' | 'maxed' };
 
 function catalogItem(kind: ShopKind, id: string): { price: number; level: number } | undefined {
   if (kind === 'paint') return PAINTS.find((p) => p.id === id);
   if (kind === 'sticker') return STICKERS.find((p) => p.id === id);
+  if (kind === 'car') return CARS.find((c) => c.id === id);
   return HORNS.find((p) => p.id === id);
 }
 

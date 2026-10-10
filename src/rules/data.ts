@@ -228,6 +228,10 @@ export const LINES = {
   stationFull: ['Tank full. Oya road!'],
   stationBroke: ['Money no reach for more fuel.'],
   night: ['Night don fall. Headlights on.'],
+  raceGo: ['Oya! Go go go!', 'Gbam! Floor am!'],
+  raceBump: ['Ehen! Na rubbing be that!', 'Commot for my front!', 'Gentle with the panel!'],
+  raceLead: ['You dey lead! No look back!', 'Na you be oga of this road!'],
+  raceFinish: ['Finish line! Who win?'],
 } as const;
 
 // ---------- Garage ----------
@@ -309,7 +313,8 @@ export type MissionEvent =
   | 'streak'
   | 'hawkerSale'
   | 'toll'
-  | 'rainDeliver';
+  | 'rainDeliver'
+  | 'raceWin';
 export interface MissionDef {
   readonly id: MissionEvent;
   /** "run": progress resets each run. "total": progress carries across runs. */
@@ -336,6 +341,7 @@ export const MISSIONS: readonly MissionDef[] = [
   { id: 'hawkerSale', scope: 'total', mode: 'sum', minLevel: 1, target: (l) => 3 + l, text: (n) => `Let passengers buy from ${n} hawkers` },
   { id: 'toll', scope: 'total', mode: 'sum', minLevel: 6, target: () => 1, text: () => 'Pay the Lekki toll' },
   { id: 'rainDeliver', scope: 'total', mode: 'sum', minLevel: 2, target: (l) => 3 + l, text: (n) => `Deliver ${n} passengers in the rain` },
+  { id: 'raceWin', scope: 'total', mode: 'sum', minLevel: 2, target: (l) => 1 + Math.floor(l / 4), text: (n) => (n === 1 ? 'Win a race' : `Win ${n} races`) },
 ];
 
 // ---------- Daily events (weekday in West Africa Time) ----------

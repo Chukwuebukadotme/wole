@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { KERB_X, LANES, LANE_W, ROAD_W, TUNING, laneX, KERB } from '../rules/data.ts';
 import { lambert } from './materials.ts';
 import { BOX, PLANE, box, makeFigure, makeLamp } from './models.ts';
-import { bayTexture, cameraSignTexture, plateTexture, stationSignTexture, stopLineTexture, tollSignTexture } from './textures.ts';
+import { bayTexture, cameraSignTexture, chequerTexture, nameTagTexture, plateTexture, raceBannerTexture, stationSignTexture, stopLineTexture, tollSignTexture } from './textures.ts';
 
 const ZONE_LEN = TUNING.zoneBefore + TUNING.zoneAfter;
 const plateCache = new Map<string, THREE.MeshBasicMaterial>();
@@ -177,4 +177,37 @@ export function makeBrtCamera(): THREE.Group {
   sign.position.set(-(KERB_X + 1.2), 3.6, 0.1);
   g.add(sign);
   return g;
+}
+
+/** Race start or finish gantry across the whole road, with a chequered line. Origin = the line. */
+export function makeRaceGate(word: 'START' | 'FINISH'): THREE.Group {
+  const g = new THREE.Group();
+  // Banner height matches the toll canopy, above the chase camera.
+  g.add(box(ROAD_W + 3, 1.3, 0.3, 0x141414, 0, 9.6, 0));
+  const banner = new THREE.Mesh(PLANE, new THREE.MeshBasicMaterial({ map: raceBannerTexture(word) }));
+  banner.scale.set(ROAD_W + 2.6, 1.1, 1);
+  banner.position.set(0, 9.6, 0.16);
+  g.add(banner);
+  for (const sign of [-1, 1] as const) g.add(box(0.45, 10.2, 0.45, 0x5b5f66, sign * (KERB_X + 1), 5.1, 0));
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 1.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: chequerTexture(), transparent: true, depthWrite: false }));
+  line.position.y = 0.025;
+  g.add(line);
+  return g;
+}
+
+/** Name tag that floats above a racer or rival; dispose it when the race ends. */
+export function makeNameTag(name: string, color: string, height: number): THREE.Sprite {
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTagTexture(name, color) }));
+  tag.scale.set(1.9, 0.53, 1);
+  tag.position.y = height + 0.75;
+  tag.name = 'nametag';
+  return tag;
+}
+
+export function removeNameTag(holder: THREE.Object3D): void {
+  const tag = holder.getObjectByName('nametag');
+  if (!(tag instanceof THREE.Sprite)) return;
+  tag.removeFromParent();
+  tag.material.map?.dispose();
+  tag.material.dispose();
 }

@@ -458,6 +458,89 @@ body.touch .keys {
   box-shadow: 0 1px 0 #257344;
 }
 
+/* ---------- Race read-outs ---------- */
+#hud:not(.racing) .race-only,
+#hud.racing .run-only {
+  display: none;
+}
+.big small {
+  font-size: 0.6em;
+  color: var(--soft);
+  margin-left: 2px;
+}
+.track {
+  position: relative;
+  width: min(100%, 26rem);
+  height: 14px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+}
+.track::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: -5px;
+  width: 9px;
+  height: 22px;
+  border-radius: 2px;
+  background: repeating-conic-gradient(var(--stripe) 0 25%, var(--paper) 0 50%) 0 0 / 6px 6px;
+}
+.track i {
+  position: absolute;
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+}
+.track i.you {
+  top: -3px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border: 3px solid var(--paper);
+  z-index: 1;
+}
+#countdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 28%;
+  text-align: center;
+  font-family: var(--display);
+  font-size: clamp(4rem, 18vw, 8rem);
+  line-height: 1;
+  color: var(--danfo);
+  text-shadow: 0 6px 0 var(--stripe);
+  opacity: 0;
+  pointer-events: none;
+}
+#countdown.on {
+  animation: count 0.9s ease-out forwards;
+}
+#countdown.go {
+  color: var(--ok);
+}
+@keyframes count {
+  0% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
 /* ---------- Change panel ---------- */
 #change {
   position: absolute;
@@ -574,6 +657,9 @@ body:not(.touch) .ch-buttons button kbd {
 }
 .card.narrow {
   width: min(100%, 24rem);
+}
+.card.wide {
+  width: min(100%, 50rem);
 }
 .panel {
   width: min(100%, 26rem);
@@ -712,6 +798,71 @@ h3 {
   font-size: 0.85rem;
   line-height: 1.25;
 }
+.route-meta {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.race-cta {
+  background: #0b7a3e;
+  color: #fff;
+}
+.race-cta:hover {
+  background: #0d8c47;
+}
+.carpicks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+.carpick {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  border: 2px solid rgba(20, 20, 20, 0.25);
+  background: rgba(255, 248, 230, 0.55);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 6px 9px;
+}
+.carpick.on {
+  border-color: var(--stripe);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--stripe);
+}
+.item.pickable {
+  cursor: pointer;
+}
+.standings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.standings li {
+  display: grid;
+  grid-template-columns: 2.6em minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  background: rgba(20, 20, 20, 0.08);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.standings li.you {
+  background: var(--stripe);
+  color: var(--danfo);
+}
+.standings span:nth-child(2) {
+  display: grid;
+  font-weight: 700;
+}
+.standings small {
+  font-weight: 500;
+  opacity: 0.75;
+}
+
 .row {
   display: flex;
   gap: 8px;
@@ -1051,5 +1202,8 @@ h3 {
   }
   #flash.on {
     animation: none;
+  }
+  #countdown.on {
+    animation-name: fade;
   }
 }

@@ -6,6 +6,8 @@ import { KERB, KERB_X, LANES, PAINTS, laneX, type StretchKind } from '../rules/d
 import { clamp, pick, rand, weighted, type Rng } from '../rules/util.ts';
 
 export type VehicleKind = 'car' | 'danfo' | 'keke' | 'okada' | 'truck' | 'brt';
+/** Ordinary traffic picks its own speed and lanes; racers and rival danfos are steered by the game. */
+export type Driver = 'traffic' | 'racer' | 'rival';
 export type HazardKind = 'barrier' | 'pothole' | 'puddle';
 export type WalkerKind = 'pedestrian' | 'hawker';
 
@@ -46,6 +48,13 @@ export interface Vehicle extends Flingable {
   cross: boolean;
   laneCooldown: number;
   behind: boolean;
+  driver: Driver;
+  /** Speed a racer or rival wants, in m/s. */
+  aim: number;
+  /** Pull-away in m/s². */
+  accel: number;
+  /** How quickly it slides across to a new lane. */
+  steer: number;
 }
 export interface Hazard extends Flingable {
   kind: HazardKind;
@@ -93,6 +102,12 @@ export interface TrafficEnv {
   /** 0–1: how often luxury cars and exotics turn up. */
   readonly posh: number;
   readonly playing: boolean;
+  /** Whether ₦20 notes lie in free lanes. */
+  readonly notes: boolean;
+  /** Vehicles outside this stretch are removed; null keeps the usual window around the bus. */
+  readonly span: { readonly from: number; readonly to: number } | null;
+  /** The player's vehicle, which racers and rivals keep clear of. */
+  readonly player: { readonly d: number; readonly x: number; readonly l: number };
   stretchAt(d: number): StretchInfo;
   /** True near bus stops and stations, where the kerb lane must stay clear. */
   kerbReserved(d: number): boolean;
@@ -196,6 +211,10 @@ export class Traffic {
       cross: false,
       laneCooldown: 0,
       behind: false,
+      driver: 'traffic',
+      aim: 0,
+      accel: 3.5,
+      steer: 3,
       flung: false,
       flungT: 0,
       vx: 0,
@@ -227,9 +246,14 @@ export class Traffic {
     return (BASE_LANE_SPEED[lane] ?? 8) * STRETCH_SPEED[stretch.kind];
   }
 
-  private spawnTraffic(env: TrafficEnv): void {
+  /** Lay out traffic all the way to `until` at once (races, where rivals run far from the bus). */
+  prespawn(env: TrafficEnv, until: number): void {
+    this.spawnTraffic(env, until);
+  }
+
+  private spawnTraffic(env: TrafficEnv, until = env.dist + 240): void {
     const rng = this.rng;
-    while (this.spawnD < env.dist + 240) {
+    while (this.spawnD < until) {
       const d = this.spawnD;
       const s = env.stretchAt(d);
       const lanes = [0, 1, 2, 3].filter((l) => !(s.brt && l === 0) && !(l === KERB && env.kerbReserved(d)));
@@ -278,7 +302,7 @@ export class Traffic {
       }
       if (s.brt && rng() < 0.2 && this.laneFree(0, d, 20)) this.addVehicle('brt', 0, d, 16);
       const free = lanes.slice(count);
-      if (free.length > 0 && rng() < 0.4) {
+      if (env.notes && free.length > 0 && rng() < 0.4) {
         const lane = pick(free, rng);
         if (this.laneFree(lane, d + 12, 10))
           for (let k = 0; k < 5; k++) this.notes.push({ mesh: this.take('note', makeNote), lane, x: laneX(lane), d: d + 6 + k * 3 });
@@ -356,15 +380,18 @@ export class Traffic {
         for (const line of stopLines) if (v.d < line && line - v.d < 130) limit = Math.min(limit, line - v.l / 2 - 1);
         for (const h of this.hazards) if (h.kind === 'barrier' && !h.flung && h.lane === lane && h.d > v.d) limit = Math.min(limit, h.d - v.l / 2 - 2.5);
         for (const p of peds) if (p.d > v.d) limit = Math.min(limit, p.d - v.l / 2 - 2);
-        let desired = v.broken ? 0 : this.laneSpeed(lane, s, v.kind);
+        const ai = v.driver !== 'traffic';
+        const you = env.player;
+        if (ai && you.d > v.d && Math.abs(you.x - laneX(lane)) < 2) limit = Math.min(limit, you.d - (you.l + v.l) / 2 - 1.5);
+        let desired = v.broken ? 0 : ai ? v.aim : this.laneSpeed(lane, s, v.kind);
         for (const z of slow) if (v.d > z.from && v.d < z.to) desired = Math.min(desired, z.speed);
         const gap = limit - v.d;
         const follow = gap <= 0 ? 0 : Math.min(desired, gap * 1.1);
-        v.v += clamp(follow - v.v, -9 * dt, 3.5 * dt);
+        v.v += clamp(follow - v.v, -(ai ? 14 : 9) * dt, v.accel * dt);
         if (v.v < 0) v.v = 0;
         v.d = Math.min(v.d + v.v * dt, Math.max(v.d, limit));
         v.laneCooldown = Math.max(0, v.laneCooldown - dt);
-        if (!v.broken && !v.behind && v.laneCooldown <= 0 && gap < 14 && desired - follow > 2) {
+        if (!ai && !v.broken && !v.behind && v.laneCooldown <= 0 && gap < 14 && desired - follow > 2) {
           const options = [lane - 1, lane + 1].filter(
             (l) => l >= 0 && l < LANES && !(s.brt && l === 0 && v.kind !== 'brt') && !(l === KERB && env.kerbReserved(v.d)) && this.laneFree(l, v.d, 10, v),
           );
@@ -388,13 +415,15 @@ export class Traffic {
       } else if (v.cross) {
         v.x += v.vx * dt;
       } else {
-        v.x += (laneX(v.lane) - v.x) * Math.min(1, dt * 3);
+        v.x += (laneX(v.lane) - v.x) * Math.min(1, dt * v.steer);
       }
       v.mesh.position.set(v.x, v.y, -(v.d - D));
-      const kerbExit = !v.flung && !v.cross && v.lane === KERB && env.kerbReserved(v.d) && v.d > D + 20;
-      // A BRT bus chasing the player starts behind the bus, so it gets a longer leash.
-      const tooFarBehind = v.d < D - (v.behind ? 150 : 30);
-      if (tooFarBehind || v.d > D + 340 || (v.cross && Math.abs(v.x) > 46) || kerbExit) this.removeVehicle(i);
+      const kerbExit = v.driver === 'traffic' && !v.flung && !v.cross && v.lane === KERB && env.kerbReserved(v.d) && v.d > D + 20;
+      // A BRT bus chasing the player and a rival danfo get a longer leash; the game retires a rival that gets away.
+      const tooFarBehind = v.d < D - (v.behind || v.driver === 'rival' ? 150 : 30);
+      const tooFarAhead = v.d > D + 340 && v.driver !== 'rival';
+      const outside = env.span ? v.d < env.span.from || v.d > env.span.to : tooFarBehind || tooFarAhead;
+      if (outside || (v.cross && Math.abs(v.x) > 46) || kerbExit) this.removeVehicle(i);
     }
 
     for (let i = this.hazards.length - 1; i >= 0; i--) {

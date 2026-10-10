@@ -270,6 +270,61 @@ export const tollSignTexture = (): THREE.CanvasTexture =>
     g.fillText('LEKKI TOLL GATE · SLOW DOWN · ₦200', w / 2, h / 2 + 2);
   });
 
+/** Chequered race banner with a word in the middle, e.g. "START" or "FINISH". */
+export function raceBannerTexture(word: string): THREE.CanvasTexture {
+  return canvasTexture(1024, 128, (g, w, h) => {
+    const sq = 32;
+    for (let x = 0; x < w; x += sq) for (let y = 0; y < h; y += sq) {
+      g.fillStyle = (x / sq + y / sq) % 2 === 0 ? '#141414' : '#f4f1e8';
+      g.fillRect(x, y, sq, sq);
+    }
+    g.fillStyle = '#f6b800';
+    g.fillRect(w * 0.3, 12, w * 0.4, h - 24);
+    g.fillStyle = '#141414';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    fitFont(g, word, w * 0.36, 78);
+    g.fillText(word, w / 2, h / 2 + 4);
+  });
+}
+
+/** Floating name tag: the name on a pill in the driver's colour. */
+export function nameTagTexture(name: string, color: string): THREE.CanvasTexture {
+  return canvasTexture(256, 72, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = color;
+    g.strokeStyle = '#141414';
+    g.lineWidth = 6;
+    g.beginPath();
+    g.roundRect(4, 4, w - 8, h - 22, 22);
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.moveTo(w / 2 - 12, h - 19);
+    g.lineTo(w / 2 + 12, h - 19);
+    g.lineTo(w / 2, h - 4);
+    g.closePath();
+    g.fillStyle = '#141414';
+    g.fill();
+    const c = new THREE.Color(color);
+    g.fillStyle = c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.55 ? '#141414' : '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    fitFont(g, name.toUpperCase(), w - 40, 34);
+    g.fillText(name.toUpperCase(), w / 2, (h - 18) / 2 + 3);
+  });
+}
+
+/** Two rows of black and white squares for a start or finish line on the road. */
+export const chequerTexture = (): THREE.CanvasTexture =>
+  canvasTexture(512, 32, (g, w, h) => {
+    const sq = h / 2;
+    for (let x = 0; x < w; x += sq) for (let y = 0; y < h; y += sq) {
+      g.fillStyle = (x / sq + y / sq) % 2 === 0 ? '#141414' : '#f4f1e8';
+      g.fillRect(x, y, sq, sq);
+    }
+  });
+
 export const cameraSignTexture = (): THREE.CanvasTexture =>
   canvasTexture(256, 128, (g, w, h) => {
     g.fillStyle = '#f2efe6';
