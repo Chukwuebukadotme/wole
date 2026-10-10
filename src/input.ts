@@ -8,6 +8,7 @@ export interface Controls {
   lane(dir: -1 | 1): void;
   hopOrGo(): void;
   brake(on: boolean): void;
+  gas(on: boolean): void;
   horn(on: boolean): void;
   pause(): void;
   mute(): void;
@@ -49,17 +50,20 @@ export function bindInput(view: HTMLCanvasElement, c: Controls): void {
     }
     if (k === 'arrowleft' || k === 'a') c.lane(-1);
     else if (k === 'arrowright' || k === 'd') c.lane(1);
-    else if (k === ' ' || k === 'arrowup' || k === 'w') c.hopOrGo();
+    else if (k === 'arrowup' || k === 'w') c.gas(true);
+    else if (k === ' ') c.hopOrGo();
     else if (k === 'h') c.horn(true);
     else if (k === 'p' || k === 'escape') c.pause();
   });
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();
     if (k === 'arrowdown' || k === 's' || k === 'shift') c.brake(false);
+    if (k === 'arrowup' || k === 'w') c.gas(false);
     if (k === 'h') c.horn(false);
   });
   window.addEventListener('blur', () => {
     c.brake(false);
+    c.gas(false);
     c.horn(false);
   });
   document.addEventListener('visibilitychange', () => {
@@ -116,6 +120,7 @@ export function bindInput(view: HTMLCanvasElement, c: Controls): void {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   };
   hold(byId('b-brake'), () => c.brake(true), () => c.brake(false));
+  hold(byId('b-gas'), () => c.gas(true), () => c.gas(false));
   hold(byId('b-horn'), () => c.horn(true), () => c.horn(false));
   byId('b-hop').addEventListener('pointerdown', (e) => {
     e.preventDefault();

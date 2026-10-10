@@ -440,10 +440,22 @@ body.touch .keys {
   font-size: 1.15rem;
   box-shadow: 0 5px 0 #8f2a1d;
 }
+#b-gas {
+  background: var(--ok);
+  color: var(--ink);
+  width: 118px;
+  height: 88px;
+  font-size: 1.15rem;
+  box-shadow: 0 5px 0 #257344;
+}
 #b-brake.on,
 #b-horn.on {
   transform: translateY(4px);
   box-shadow: 0 1px 0 #8f2a1d;
+}
+#b-gas.on {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #257344;
 }
 
 /* ---------- Change panel ---------- */
@@ -992,8 +1004,16 @@ h3 {
     font-size: 0.8rem;
     padding: 0 7px;
   }
-  #b-brake {
-    width: 104px;
+  .pad {
+    gap: 8px;
+  }
+  #b-horn,
+  #b-hop {
+    width: 62px;
+  }
+  #b-brake,
+  #b-gas {
+    width: 88px;
     height: 80px;
   }
   .mission {

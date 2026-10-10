@@ -21,6 +21,7 @@ try {
     lane: (dir) => game.laneChange(dir),
     hopOrGo: () => game.hopOrGo(),
     brake: (on) => game.setBrake(on),
+    gas: (on) => game.setGas(on),
     horn: (on) => game.horn(on),
     pause: () => game.pauseFromInput(),
     mute: () => game.muteFromInput(),

@@ -261,7 +261,8 @@ export class Screens {
         <h2>How to drive</h2>
         <ul class="howto">
           <li><b>Lanes</b><span>Swipe, or <kbd>←</kbd> <kbd>→</kbd>. Hop with a swipe up or <kbd>Space</kbd> (clears barriers, not cars).</span></li>
-          <li><b>Stops</b><span>Move to the kerb lane, hold BRAKE or <kbd>↓</kbd> in the yellow bay. The bus holds while people move, then drives off. Press GO or <kbd>Space</kbd> to leave early.</span></li>
+          <li><b>Speed</b><span>Hold GAS or <kbd>↑</kbd> to go faster, up to 130 km/h. Let go and the bus eases back to its normal speed. Faster burns more fuel and makes bays harder to hit.</span></li>
+          <li><b>Stops</b><span>Move to the kerb lane, hold BRAKE or <kbd>↓</kbd> in the yellow bay. The bus holds while people move, then drives off. Press GO, <kbd>↑</kbd> or <kbd>Space</kbd> to leave early.</span></li>
           <li><b>Change</b><span>Some passengers pay with big notes. Tap ₦50–₦500 (keys <kbd>1</kbd>–<kbd>4</kbd>) to hand back exact change for a tip.</span></li>
           <li><b>Fuel</b><span>Watch the gauge. Stop in a green fuel bay to buy fuel with your earnings. Empty tank ends the run.</span></li>
           <li><b>Warden</b><span>When the warden raises his hand, stop before the white line. Crossing costs ₦500.</span></li>

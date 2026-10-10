@@ -146,6 +146,7 @@ interface Run {
   t: number;
   hour: number;
   braking: boolean;
+  gas: boolean;
   parked: { kind: 'stop' | 'station'; key: string; leaveT: number } | null;
   body: number;
   readonly bodyMax: number;
@@ -506,6 +507,7 @@ export class Game {
       t: 0,
       hour: this.event.startHour,
       braking: false,
+      gas: false,
       parked: null,
       body: bodyMax(this.save),
       bodyMax: bodyMax(this.save),
@@ -563,6 +565,7 @@ export class Game {
     if (this.mode !== 'play') return;
     this.mode = 'paused';
     this.setBrake(false);
+    this.setGas(false);
     this.sound.hornOff();
     this.screens.pause(this.save.settings.muted);
   }
@@ -582,6 +585,7 @@ export class Game {
     r.endT = 0;
     r.parked = null;
     this.setBrake(false);
+    this.setGas(false);
     this.sound.hornOff();
     this.change.hide();
     this.screens.hideAll();
@@ -671,6 +675,14 @@ export class Game {
 
   setBrake(on: boolean): void {
     if (this.run) this.run.braking = on && this.mode === 'play';
+  }
+
+  /** Hold to drive above cruise speed; pressing it while parked drives off. */
+  setGas(on: boolean): void {
+    const r = this.run;
+    if (!r) return;
+    r.gas = on && this.mode === 'play';
+    if (r.gas && r.parked) this.unpark();
   }
 
   horn(on: boolean): void {
@@ -836,11 +848,11 @@ export class Game {
 
     const cruise = Math.min(TUNING.speedMax, TUNING.speedStart + TUNING.speedRamp * r.t);
     const empty = r.fuel <= 0;
-    const target = r.parked || r.braking || empty ? 0 : cruise;
+    const target = r.parked || r.braking || empty ? 0 : r.gas ? TUNING.gasMax : cruise;
     const brake = TUNING.brake * r.brakeFactor * lerp(1, 0.72, r.rain);
     if (r.parked) this.speed = 0;
     else if (this.speed > target) this.speed = Math.max(target, this.speed - (r.braking ? brake : TUNING.coast) * dt);
-    else this.speed = Math.min(target, this.speed + TUNING.accel * dt);
+    else this.speed = Math.min(target, this.speed + (this.speed < cruise ? TUNING.accel : TUNING.gasAccel) * dt);
 
     const moved = this.speed * dt;
     this.dist += moved;

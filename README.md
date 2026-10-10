@@ -17,8 +17,10 @@ Built with TypeScript, Three.js and Vite. Everything is drawn in code (no image 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
 | Change lane | ← → or A D | Swipe left or right |
+| Speed up (eases back when released, up to 130 km/h) | Hold ↑ or W | Hold GAS |
 | Brake (and stop at a bay) | Hold ↓, S or Shift | Hold BRAKE |
-| Hop over barriers / leave a stop early | Space, ↑ or W | Swipe up or HOP/GO |
+| Hop over barriers | Space | Swipe up or HOP |
+| Leave a stop early | Space, ↑ or W | GO or GAS |
 | Horn (moves okadas and kekes) | H | HORN |
 | Give change | 1–4, Backspace to undo | Tap the notes |
 | Pause, mute | P or Esc, M | Pause, Sound |

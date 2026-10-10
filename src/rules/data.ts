@@ -14,6 +14,8 @@ export const TUNING = {
   speedStart: 13,
   speedMax: 28,
   speedRamp: 0.1,
+  gasMax: 36,
+  gasAccel: 4,
   accel: 6.5,
   coast: 5,
   brake: 19,
