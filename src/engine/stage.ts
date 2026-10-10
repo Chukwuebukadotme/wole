@@ -51,6 +51,9 @@ export class Stage {
   private readonly rainPos: Float32Array;
   private readonly rainMat = new THREE.LineBasicMaterial({ color: 0xc3d1dc, transparent: true, opacity: 0 });
   readonly skyline = new THREE.Group();
+  private readonly skylineBodies: THREE.MeshBasicMaterial[] = [];
+  private readonly skylineDay = new THREE.Color(0x5d6b7a);
+  private readonly skylineNight = new THREE.Color(0x141a2e);
   private readonly tmpA = new THREE.Color();
   private readonly tmpB = new THREE.Color();
   darkness = 0;
@@ -97,7 +100,9 @@ export class Stage {
       const side = i % 2 === 0 ? -1 : 1;
       const w = 10 + Math.random() * 16;
       const h = 20 + Math.random() * 60;
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, 10), new THREE.MeshBasicMaterial({ color: 0x5d6b7a, fog: true }));
+      const bodyMat = new THREE.MeshBasicMaterial({ color: 0x5d6b7a, fog: true });
+      this.skylineBodies.push(bodyMat);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, 10), bodyMat);
       body.position.set(side * (70 + Math.random() * 140), h / 2 - 8, -230 - Math.random() * 70);
       const lit = new THREE.MeshBasicMaterial({ map: windows, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
       n.skyline.push(lit);
@@ -170,6 +175,7 @@ export class Stage {
     this.busLight.intensity = this.darkness * 60;
     setNightLevel(this.darkness);
     this.skyline.visible = onBridge;
+    if (onBridge) for (const m of this.skylineBodies) m.color.lerpColors(this.skylineDay, this.skylineNight, this.darkness);
     this.rain.visible = weather.rain > 0.02;
     this.rainMat.opacity = weather.rain * 0.55;
   }

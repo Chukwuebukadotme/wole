@@ -379,7 +379,9 @@ export class Traffic {
       }
       v.mesh.position.set(v.x, v.y, -(v.d - D));
       const kerbExit = !v.flung && !v.cross && v.lane === KERB && env.kerbReserved(v.d) && v.d > D + 20;
-      if (v.d < D - 30 || v.d > D + 340 || (v.cross && Math.abs(v.x) > 46) || kerbExit) this.removeVehicle(i);
+      // A BRT bus chasing the player starts behind the bus, so it gets a longer leash.
+      const tooFarBehind = v.d < D - (v.behind ? 150 : 30);
+      if (tooFarBehind || v.d > D + 340 || (v.cross && Math.abs(v.x) > 46) || kerbExit) this.removeVehicle(i);
     }
 
     for (let i = this.hazards.length - 1; i >= 0; i--) {

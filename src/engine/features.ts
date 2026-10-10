@@ -142,14 +142,15 @@ export interface TollVisual {
 export function makeToll(): TollVisual {
   const m = mats();
   const g = new THREE.Group();
-  g.add(box(ROAD_W + 4, 0.8, 6, 0x16365c, 0, 6.2, -1.5));
+  // Canopy sits above the chase camera (about 7–8.6 m) so it never sweeps across the view.
+  g.add(box(ROAD_W + 4, 0.8, 6, 0x16365c, 0, 9.6, -1.5));
   const sign = new THREE.Mesh(PLANE, m.toll);
   sign.scale.set(ROAD_W + 3, 0.8, 1);
-  sign.position.set(0, 6.2, 1.52);
+  sign.position.set(0, 9.6, 1.52);
   g.add(sign);
   for (let i = 0; i <= LANES; i++) {
     const x = -ROAD_W / 2 + i * LANE_W;
-    g.add(box(0.8, 2.4, 4, 0xe8e2d4, x, 1.2, -1.5), box(0.5, 4.6, 0.5, 0x5b5f66, x, 3.9, -1.5));
+    g.add(box(0.8, 2.4, 4, 0xe8e2d4, x, 1.2, -1.5), box(0.5, 6.8, 0.5, 0x5b5f66, x, 5.8, -1.5));
   }
   const arms: THREE.Group[] = [];
   for (let lane = 0; lane < LANES; lane++) {
