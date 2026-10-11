@@ -4,6 +4,7 @@ import { carModelsReady, makeVehicle } from '../engine/cars.ts';
 import { makeBrtCamera, makeJunction, makeNameTag, makeRaceGate, makeStation, makeStop, makeToll, plateMaterial, removeNameTag, type JunctionVisual, type TollVisual } from '../engine/features.ts';
 import { makeDanfo, makeFigure, type DanfoModel, type FigureKind } from '../engine/models.ts';
 import { Stage } from '../engine/stage.ts';
+import { Thumbnails } from '../engine/thumbs.ts';
 import { Tiles, type TileContext } from '../engine/tiles.ts';
 import {
   CALLS,
@@ -31,7 +32,7 @@ import {
   type StretchKind,
   type UpgradeId,
 } from '../rules/data.ts';
-import { CARS, MODEL_SIZE, carById, carSummary, type CarDef, type ModelId } from '../rules/cars.ts';
+import { CARS, MODEL_SIZE, carById, carStats, carSummary, type CarDef, type ModelId } from '../rules/cars.ts';
 import { eventFor, isHarmattanSeason, previousDayKey, watDayKey } from '../rules/daily.ts';
 import { changeTip, checkChange, fareFor, paymentFor, streakBonus, streakMult } from '../rules/fare.ts';
 import { applyEvent, claim, fillMissions, missionDone, missionText, startRun as startRunMissions } from '../rules/missions.ts';
@@ -298,6 +299,7 @@ export class Game {
   private readonly traffic: Traffic;
   private readonly bus: DanfoModel;
   private readonly sound = new SoundBoard();
+  private readonly thumbs: Thumbnails;
   private readonly hud = new Hud();
   private readonly change: ChangePanel;
   private readonly screens: Screens;
@@ -315,6 +317,9 @@ export class Game {
   private vy = 0;
   private air = false;
   private shake = 0;
+  /** Suspension: body bounce in metres and its speed, kicked by potholes, landings and boarding. */
+  private bob = 0;
+  private bobV = 0;
   private run: Run | null = null;
   private garageTab: GarageTab = 'car';
   private garageFrom: 'title' | 'race' = 'title';
@@ -345,6 +350,7 @@ export class Game {
 
   constructor(host: HTMLElement) {
     this.stage = new Stage(host);
+    this.thumbs = new Thumbnails(this.stage.renderer);
     this.tiles = new Tiles(this.stage.scene);
     this.traffic = new Traffic(this.stage.scene);
     this.save = this.loadSave();
@@ -523,7 +529,10 @@ export class Game {
     const s = this.save;
     let items: GarageItem[];
     if (this.garageTab === 'car')
-      items = CARS.map((c) => ({ kind: 'car', id: c.id, name: c.name, detail: carSummary(c, c.id === 'danfo' ? bodyMax(s) : c.hits), swatch: c.swatch, price: c.price, owned: s.owned.car.includes(c.id), equipped: s.equip.car === c.id, lockedLevel: level < c.level ? c.level : null, affordable: bank >= c.price }));
+      items = CARS.map((c) => {
+        const hits = c.id === 'danfo' ? bodyMax(s) : c.hits;
+        return { kind: 'car', id: c.id, name: c.name, detail: carSummary(c, hits), swatch: c.swatch, thumb: this.carThumb(c.id), stats: carStats(c, hits), price: c.price, owned: s.owned.car.includes(c.id), equipped: s.equip.car === c.id, lockedLevel: level < c.level ? c.level : null, affordable: bank >= c.price };
+      });
     else if (this.garageTab === 'paint')
       items = PAINTS.map((p) => ({ kind: 'paint', id: p.id, name: p.name, detail: p.price ? `₦${p.price.toLocaleString('en-NG')}` : 'Free', swatch: `linear-gradient(90deg, ${hex(p.body)} 70%, ${hex(p.stripe)} 70%)`, price: p.price, owned: s.owned.paint.includes(p.id), equipped: s.equip.paint === p.id, lockedLevel: level < p.level ? p.level : null, affordable: bank >= p.price }));
     else if (this.garageTab === 'sticker')
@@ -581,6 +590,17 @@ export class Game {
     if (paint) this.bus.setPaint(paint);
     if (sticker) this.bus.setSticker(sticker.text);
     this.sound.horn = this.save.equip.horn;
+  }
+
+  /** Rendered picture of a car (the danfo in its current paint) for menus. */
+  private carThumb(id: string): string {
+    const car = carById(id);
+    if (car.model === 'danfo') {
+      const paint = PAINTS.find((p) => p.id === this.save.equip.paint) ?? PAINTS[0];
+      if (!paint) return '';
+      return this.thumbs.get(`danfo:${paint.id}`, () => makeDanfo(paint, null, false).group);
+    }
+    return this.thumbs.get(`${id}:${carModelsReady() ? '3d' : 'box'}`, () => makeVehicle(car.model as ModelId, car.paint));
   }
 
   /** Put the danfo or one of the player's cars on the road, sized for collisions. */
@@ -981,6 +1001,7 @@ export class Game {
         this.y = 0;
         this.vy = 0;
         this.air = false;
+        this.kick(0.8);
       }
     }
   }
@@ -1141,7 +1162,7 @@ export class Game {
       }),
       cars: s.owned.car.map((id) => {
         const c = carById(id);
-        return { id, name: c.name, detail: carSummary(c, id === 'danfo' ? bodyMax(s) : c.hits), swatch: c.swatch, selected: id === s.equip.car };
+        return { id, name: c.name, detail: carSummary(c, id === 'danfo' ? bodyMax(s) : c.hits), swatch: c.swatch, thumb: this.carThumb(id), selected: id === s.equip.car };
       }),
       moreCars: s.owned.car.length < CARS.length,
     };
@@ -1660,6 +1681,7 @@ export class Game {
     const doorZ = -1.6 - st.vis.group.position.z;
     st.movers.push({ mesh: w.mesh, kind: w.kind, t: 0, board: true, x0: w.mesh.position.x, z0: w.mesh.position.z, x1: this.x + 1.25, z1: doorZ, dir: 0 });
     this.sound.board();
+    this.kick(0.25);
     if (w.kind === 'trader') this.hud.say('Mama with basin don enter. Two seats!', 'info');
     if (r.seats - this.seatsUsed(r) <= 0) this.hud.say(pick(LINES.full), 'conductor');
     if (w.kind !== 'regular') this.tip(`pax:${w.kind}`, `${PAX[w.kind].label} on board: ${PAX[w.kind].perk}`);
@@ -1708,6 +1730,7 @@ export class Game {
     p.count += 1;
     for (const n of notes) if (!p.notes.includes(n)) p.notes.push(n);
     this.sound.fare();
+    this.kick(0.2);
     // The guided first fare is paid exactly; giving change starts after it.
     const guided = this.guiding(r);
     if (guided) this.finishGuide(r);
@@ -2109,9 +2132,11 @@ export class Game {
         for (const rd of r.riders) rd.smooth = false;
         if (h.kind === 'puddle') {
           this.speed *= 0.8;
+          this.kick(0.35);
           this.sound.splash();
         } else {
           this.speed *= 0.6;
+          this.kick(0.75);
           this.shake = 0.35;
           this.sound.thud();
           if (r.potholeT <= 0) {
@@ -2156,6 +2181,11 @@ export class Game {
     }
   }
 
+  /** Jolt the suspension downwards; bigger numbers bounce harder. */
+  private kick(strength: number): void {
+    this.bobV -= strength;
+  }
+
   private crash(hit?: Vehicle | Hazard): void {
     const r = this.run;
     if (hit) this.traffic.fling(hit, this.x);
@@ -2164,6 +2194,7 @@ export class Game {
     const learning = this.guiding(r);
     if (!learning) r.body -= 1;
     r.crashes += 1;
+    this.kick(0.9);
     r.invuln = 2.2;
     this.speed *= 0.25;
     this.shake = 0.7;
@@ -2397,13 +2428,19 @@ export class Game {
 
   // ---------- Bus, camera, HUD ----------
   private updateRideMesh(dt: number): void {
+    const r = this.run;
     const car = this.ride !== 'danfo' ? this.rideMesh : null;
     const g = car ?? this.bus.group;
     g.position.set(this.x, this.y, 0);
     const lean = (laneX(this.lane) - this.x) * -0.035;
     g.rotation.z += (lean - g.rotation.z) * Math.min(1, dt * 10);
-    const pitch = this.run?.braking && this.speed > 1 ? 0.03 : 0;
+    // Nose dips under braking and lifts a little when you floor it.
+    const pitch = r?.braking && this.speed > 1 ? 0.045 : r?.gas && this.mode === 'play' ? -0.02 : 0;
     g.rotation.x += (pitch - g.rotation.x) * Math.min(1, dt * 6);
+    // Damped spring for the suspension bounce.
+    this.bobV += (-90 * this.bob - 9 * this.bobV) * dt;
+    this.bob += this.bobV * dt;
+    if (!this.reduceMotion) g.position.y = this.y + this.bob;
     if (car) {
       // Car models face the other way inside their group, so their wheels turn the other way.
       for (const w of car.userData.wheels as THREE.Object3D[]) w.rotation.x += (this.speed * dt) / 0.36;
@@ -2414,7 +2451,6 @@ export class Game {
     const next = k + (target - k) * Math.min(1, dt * 8);
     door.userData.k = next;
     door.position.z = -1.6 + next * 0.95;
-    const r = this.run;
     g.visible = !(this.mode === 'play' && r && r.invuln > 0 && Math.floor(r.invuln * 12) % 2 === 1);
   }
 

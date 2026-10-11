@@ -1,6 +1,7 @@
 import { PAX, PAX_KINDS, type DayEvent, type RouteId, type UpgradeId } from '../rules/data.ts';
 import type { ShopKind } from '../rules/progress.ts';
 import { byId, esc } from './dom.ts';
+import { paxIcon } from './icons.ts';
 
 export interface RouteCard {
   readonly id: RouteId;
@@ -42,6 +43,9 @@ export interface GarageItem {
   readonly name: string;
   readonly detail: string;
   readonly swatch?: string;
+  /** Rendered picture and stat bars, for cars. */
+  readonly thumb?: string;
+  readonly stats?: readonly (readonly [string, number])[];
   readonly price: number | null;
   readonly owned: boolean;
   readonly equipped: boolean;
@@ -71,6 +75,7 @@ export interface CarChoice {
   readonly name: string;
   readonly detail: string;
   readonly swatch: string;
+  readonly thumb: string;
   readonly selected: boolean;
 }
 export interface RacesModel {
@@ -286,7 +291,9 @@ export class Screens {
         else button = `<button type="button" class="buy" data-action="buy" data-kind="${it.kind}" data-id="${it.id}" ${it.affordable ? '' : 'disabled'}>Buy ₦${(it.price ?? 0).toLocaleString('en-NG')}</button>`;
         // Tapping a car's row shows it on the garage floor.
         const preview = it.kind === 'car' ? ` data-action="preview" data-id="${it.id}"` : '';
-        return `<li class="item${preview ? ' pickable' : ''}"${preview}>${it.swatch ? `<i class="swatch" style="background:${it.swatch}"></i>` : ''}<span class="item-text"><b>${esc(it.name)}</b><small>${esc(it.detail)}</small></span>${button}</li>`;
+        const picture = it.thumb ? `<img class="thumb" src="${it.thumb}" alt="" width="96" height="56">` : it.swatch ? `<i class="swatch" style="background:${it.swatch}"></i>` : '';
+        const stats = it.stats ? `<span class="stats">${it.stats.map(([label, v]) => `<span>${esc(label)}</span><i><b style="width:${Math.round(Math.min(1, v) * 100)}%"></b></i>`).join('')}</span>` : '';
+        return `<li class="item${preview ? ' pickable' : ''}"${preview}>${picture}<span class="item-text"><b>${esc(it.name)}</b><small>${esc(it.detail)}</small>${stats}</span>${button}</li>`;
       })
       .join('');
     this.show(
@@ -316,7 +323,7 @@ export class Screens {
     const cars = m.cars
       .map(
         (c) => `<button type="button" class="carpick${c.selected ? ' on' : ''}" data-action="car" data-id="${c.id}" aria-pressed="${c.selected}">
-          <i class="swatch" style="background:${c.swatch}"></i><span class="item-text"><b>${esc(c.name)}</b><small>${esc(c.detail)}</small></span>
+          ${c.thumb ? `<img class="thumb" src="${c.thumb}" alt="" width="96" height="56">` : `<i class="swatch" style="background:${c.swatch}"></i>`}<span class="item-text"><b>${esc(c.name)}</b><small>${esc(c.detail)}</small></span>
         </button>`,
       )
       .join('');
@@ -388,7 +395,7 @@ export class Screens {
   }
 
   help(next: 'home' | 'start' = 'home'): void {
-    const pax = PAX_KINDS.map((k) => `<li><i class="dot" style="background:${PAX[k].color}"></i><b>${esc(PAX[k].label)}</b><span>${esc(PAX[k].perk)}</span></li>`).join('');
+    const pax = PAX_KINDS.map((k) => `<li><i class="paxicon">${paxIcon(k, 20)}</i><b>${esc(PAX[k].label)}</b><span>${esc(PAX[k].perk)}</span></li>`).join('');
     this.show(
       'help',
       `<div class="card help sheet">

@@ -1,5 +1,6 @@
 import { PAX, type PaxKind } from '../rules/data.ts';
 import { byId, TextCache } from './dom.ts';
+import { paxIcon } from './icons.ts';
 
 export type CalloutKind = 'conductor' | 'passenger' | 'info' | 'mission';
 export type AlertTone = 'ok' | 'warn' | 'bad' | 'info';
@@ -228,11 +229,11 @@ export class Hud {
       this.ridersKey = ridersKey;
       this.el.riders.replaceChildren(
         ...d.riders.map((kind) => {
-          const dot = document.createElement('i');
-          dot.style.background = PAX[kind].color;
-          dot.title = PAX[kind].label;
-          if (PAX[kind].seats > 1) dot.className = 'wide';
-          return dot;
+          const icon = document.createElement('i');
+          icon.innerHTML = paxIcon(kind);
+          icon.title = PAX[kind].label;
+          if (PAX[kind].seats > 1) icon.className = 'wide';
+          return icon;
         }),
       );
     }

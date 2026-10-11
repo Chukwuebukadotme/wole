@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { PaintDef, PaxKind } from '../rules/data.ts';
 import { pick } from '../rules/util.ts';
 import { lambert, night } from './materials.ts';
-import { barrierTexture, billboardTextures, noteTexture, stickerTexture } from './textures.ts';
+import { barrierTexture, billboardTextures, noteTexture, shadowTexture, stickerTexture } from './textures.ts';
 
 export const BOX = new THREE.BoxGeometry(1, 1, 1);
 export const PLANE = new THREE.PlaneGeometry(1, 1);
@@ -17,6 +17,19 @@ export function box(w: number, h: number, l: number, material: THREE.Material | 
 }
 
 const WHEEL = new THREE.CylinderGeometry(0.45, 0.45, 0.32, 14).rotateZ(Math.PI / 2);
+const HUB = new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10).rotateZ(Math.PI / 2);
+const SHADOW_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+let shadowMat: THREE.MeshBasicMaterial | null = null;
+
+/** Contact shadow under a vehicle of the given footprint. */
+export function contactShadow(w: number, l: number): THREE.Mesh {
+  shadowMat ??= new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.55 });
+  const m = new THREE.Mesh(SHADOW_GEO, shadowMat);
+  m.scale.set(w * 1.35, 1, l * 1.2);
+  m.position.y = 0.035;
+  m.renderOrder = 1;
+  return m;
+}
 const SMALL_WHEEL = new THREE.CylinderGeometry(0.34, 0.34, 0.2, 12).rotateZ(Math.PI / 2);
 
 function wheels(group: THREE.Group, geo: THREE.BufferGeometry, xs: number[], zs: number[], y: number): THREE.Mesh[] {
@@ -133,30 +146,75 @@ function stickerMaterial(text: string): THREE.MeshBasicMaterial {
   return m;
 }
 
-/** The yellow-bus silhouette. `unique` gives it its own paint materials (the player's bus). */
+/**
+ * Side profile of the danfo (z along the bus, y up): flat back, raked windscreen, short nose.
+ * Drawn 8 cm inside the finished shape, because the rounded edges grow it back out.
+ */
+function danfoProfile(): THREE.Shape {
+  const p = new THREE.Shape();
+  p.moveTo(2.72, 0.5);
+  p.lineTo(2.72, 2.27);
+  p.lineTo(2.57, 2.37);
+  p.lineTo(-1.66, 2.37);
+  p.lineTo(-2.36, 1.6);
+  p.lineTo(-2.72, 1.38);
+  p.lineTo(-2.72, 0.5);
+  p.closePath();
+  return p;
+}
+let danfoBodyGeo: THREE.ExtrudeGeometry | null = null;
+function danfoBody(): THREE.ExtrudeGeometry {
+  if (!danfoBodyGeo) {
+    const bevel = 0.08;
+    const depth = 2.3 - bevel * 2;
+    danfoBodyGeo = new THREE.ExtrudeGeometry(danfoProfile(), { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 1 });
+    // Shape x runs along the bus; the extrusion becomes its width.
+    danfoBodyGeo.rotateY(-Math.PI / 2).translate(depth / 2, 0, 0);
+  }
+  return danfoBodyGeo;
+}
+
+/** The danfo. `unique` gives it its own paint materials (the player's bus). */
 export function makeDanfo(paint: PaintDef, sticker: string | null, unique: boolean): DanfoModel {
   const g = new THREE.Group();
   const bodyMat = unique ? new THREE.MeshLambertMaterial({ color: paint.body }) : lambert(paint.body);
   const stripeMat = unique ? new THREE.MeshLambertMaterial({ color: paint.stripe }) : lambert(paint.stripe);
   const roofMat = unique ? new THREE.MeshLambertMaterial({ color: paint.roof }) : lambert(paint.roof);
   const doorMat = unique ? new THREE.MeshLambertMaterial({ color: new THREE.Color(paint.body).multiplyScalar(0.85) }) : lambert(paint.body);
+  const glass = 0x1f2b33;
+  const dark = 0x232323;
   const n = night();
-  g.add(box(2.3, 1.9, 5.6, bodyMat, 0, 1.45, 0));
-  g.add(box(2.32, 0.08, 5.62, roofMat, 0, 2.44, 0));
-  g.add(box(2.34, 0.13, 5.64, stripeMat, 0, 1.0, 0), box(2.34, 0.07, 5.64, stripeMat, 0, 1.2, 0));
-  g.add(box(2.36, 0.6, 4.3, 0x1f2b33, 0, 1.95, 0.35));
-  g.add(box(2.1, 0.72, 0.06, 0x2a3a44, 0, 1.95, -2.82), box(2.0, 0.55, 0.06, 0x2a3a44, 0, 1.95, 2.82));
-  g.add(box(2.36, 0.24, 0.18, 0x2b2b2b, 0, 0.62, -2.86), box(2.36, 0.24, 0.18, 0x2b2b2b, 0, 0.62, 2.86));
-  g.add(box(0.42, 0.18, 0.05, n.head, -0.75, 0.98, -2.84), box(0.42, 0.18, 0.05, n.head, 0.75, 0.98, -2.84));
-  g.add(box(0.3, 0.2, 0.05, n.tail, -0.85, 0.98, 2.84), box(0.3, 0.2, 0.05, n.tail, 0.85, 0.98, 2.84));
+  g.add(new THREE.Mesh(danfoBody(), bodyMat));
+  g.add(box(2.16, 0.05, 4.2, roofMat, 0, 2.48, 0.35));
+  // Black danfo stripes all the way round.
+  g.add(box(2.34, 0.13, 5.64, stripeMat, 0, 0.95, 0), box(2.34, 0.07, 5.64, stripeMat, 0, 1.13, 0));
+  // Side windows: one dark band with body-coloured pillars between the panes.
+  for (const side of [-1, 1] as const) {
+    g.add(box(0.04, 0.62, 4.05, glass, side * 1.165, 1.97, 0.5));
+    for (const z of [-1.5, -0.45, 0.6, 1.6, 2.52]) g.add(box(0.05, 0.64, 0.14, bodyMat, side * 1.17, 1.97, z));
+    g.add(box(0.04, 0.5, 0.5, glass, side * 1.165, 1.9, -2.05));
+    // Wheel arches and a mirror.
+    g.add(box(0.05, 0.42, 1.2, dark, side * 1.16, 0.55, -1.8), box(0.05, 0.42, 1.2, dark, side * 1.16, 0.55, 1.8));
+    g.add(box(0.1, 0.24, 0.16, dark, side * 1.3, 1.72, -2.1), box(0.18, 0.04, 0.04, dark, side * 1.22, 1.7, -2.1));
+  }
+  const screen = box(2.04, 1.02, 0.04, glass, 0, 2.06, -2.1);
+  screen.rotation.x = Math.atan2(0.72, 0.83);
+  g.add(screen);
+  g.add(box(2.0, 0.58, 0.04, glass, 0, 1.97, 2.82));
+  g.add(box(2.36, 0.26, 0.2, dark, 0, 0.6, -2.86), box(2.36, 0.26, 0.2, dark, 0, 0.6, 2.86));
+  g.add(box(1.1, 0.26, 0.04, dark, 0, 1.0, -2.83));
+  g.add(box(0.4, 0.2, 0.05, n.head, -0.82, 1.02, -2.84), box(0.4, 0.2, 0.05, n.head, 0.82, 1.02, -2.84));
+  g.add(box(0.2, 0.42, 0.05, n.tail, -1.0, 1.35, 2.84), box(0.2, 0.42, 0.05, n.tail, 1.0, 1.35, 2.84));
   const ws = wheels(g, WHEEL, [-1.08, 1.08], [-1.8, 1.8], 0.45);
-  const door = box(0.06, 1.35, 1.0, doorMat, 1.17, 1.32, -1.6);
+  for (const w of ws) w.add(new THREE.Mesh(HUB, lambert(0xb9bdc2)));
+  const door = box(0.04, 1.3, 1.0, doorMat, 1.175, 1.4, -1.6);
   g.add(door);
   const stickerMesh = new THREE.Mesh(PLANE, stickerMaterial(sticker ?? 'NO CONDITION IS PERMANENT'));
-  stickerMesh.scale.set(2.1, 0.4, 1);
-  stickerMesh.position.set(0, 1.5, 2.86);
+  stickerMesh.scale.set(2.1, 0.36, 1);
+  stickerMesh.position.set(0, 1.42, 2.87);
   stickerMesh.visible = sticker !== null;
   g.add(stickerMesh);
+  g.add(contactShadow(2.3, 5.6));
   return {
     group: g,
     wheels: ws,
@@ -187,6 +245,7 @@ export function makeCar(color?: number): THREE.Group {
   g.add(box(0.3, 0.16, 0.05, n.tail, -0.6, 0.85, 2.11), box(0.3, 0.16, 0.05, n.tail, 0.6, 0.85, 2.11));
   g.add(box(0.32, 0.14, 0.05, n.head, -0.6, 0.8, -2.11), box(0.32, 0.14, 0.05, n.head, 0.6, 0.8, -2.11));
   wheels(g, SMALL_WHEEL, [-0.85, 0.85], [-1.35, 1.35], 0.34);
+  g.add(contactShadow(1.8, 4.2));
   return g;
 }
 
@@ -198,6 +257,7 @@ export function makeKeke(): THREE.Group {
   g.add(box(0.3, 0.14, 0.05, night().tail, 0, 0.7, 1.26));
   wheels(g, SMALL_WHEEL, [-0.6, 0.6], [0.85], 0.3);
   wheels(g, SMALL_WHEEL, [0], [-1.15], 0.3);
+  g.add(contactShadow(1.35, 2.6));
   return g;
 }
 
@@ -211,6 +271,7 @@ export function makeOkada(): THREE.Group {
   if (Math.random() < 0.5) g.add(box(0.5, 0.6, 0.34, pick(SHIRTS), 0, 1.2, 0.55));
   g.add(box(0.16, 0.1, 0.05, night().tail, 0, 0.75, 0.86));
   wheels(g, SMALL_WHEEL, [0], [-0.75, 0.75], 0.34);
+  g.add(contactShadow(0.8, 1.9));
   return g;
 }
 
@@ -220,6 +281,7 @@ export function makeTruck(): THREE.Group {
   g.add(box(2.5, 2.8, 5.4, pick([0xf1ece1, 0x7b8f47, 0xa0522d, 0xb9c4c9]), 0, 1.95, 0.95));
   g.add(box(0.3, 0.2, 0.05, night().tail, -1, 0.8, 3.66), box(0.3, 0.2, 0.05, night().tail, 1, 0.8, 3.66));
   wheels(g, WHEEL, [-1.1, 1.1], [-2.8, 0.6, 2.6], 0.45);
+  g.add(contactShadow(2.5, 7.6));
   return g;
 }
 
@@ -230,6 +292,7 @@ export function makeBrtBus(): THREE.Group {
   g.add(box(0.4, 0.2, 0.05, night().head, -0.8, 1.0, -6.03), box(0.4, 0.2, 0.05, night().head, 0.8, 1.0, -6.03));
   g.add(box(0.35, 0.22, 0.05, night().tail, -0.9, 1.0, 6.03), box(0.35, 0.22, 0.05, night().tail, 0.9, 1.0, 6.03));
   wheels(g, WHEEL, [-1.15, 1.15], [-4.2, 3.8], 0.45);
+  g.add(contactShadow(2.55, 12));
   return g;
 }
 

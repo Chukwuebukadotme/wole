@@ -20,7 +20,7 @@ function mats(): NonNullable<typeof shared> {
   if (!shared) {
     shared = {
       stopBay: new THREE.MeshLambertMaterial({ map: bayTexture('#f6b800', ['BUS', 'STOP']), transparent: true, depthWrite: false }),
-      fuelBay: new THREE.MeshLambertMaterial({ map: bayTexture('#2ecc71', ['FUEL', 'BAY']), transparent: true, depthWrite: false }),
+      fuelBay: new THREE.MeshLambertMaterial({ map: bayTexture('#2ecc71', ['FUEL', 'BAY'], true), transparent: true, depthWrite: false }),
       line: new THREE.MeshBasicMaterial({ map: stopLineTexture(), transparent: true, depthWrite: false }),
       toll: new THREE.MeshBasicMaterial({ map: tollSignTexture() }),
       camera: new THREE.MeshBasicMaterial({ map: cameraSignTexture() }),

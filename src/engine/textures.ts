@@ -171,7 +171,7 @@ export const noteTexture = (): THREE.CanvasTexture =>
     g.fillText('₦20', w / 2, h / 2 + 2);
   });
 
-export function bayTexture(color: string, words: [string, string]): THREE.CanvasTexture {
+export function bayTexture(color: string, words: [string, string], pump = false): THREE.CanvasTexture {
   return canvasTexture(256, 1024, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     g.strokeStyle = color;
@@ -191,6 +191,21 @@ export function bayTexture(color: string, words: [string, string]): THREE.Canvas
     g.font = `900 62px ${FONT_BLOCK}`;
     g.fillText(words[0], w / 2, h - 100);
     g.fillText(words[1], w / 2, h - 32);
+    if (pump) {
+      // Fuel pump pictogram, so the bay does not rely on colour alone.
+      const x = w / 2 - 46;
+      const y = h - 330;
+      g.fillRect(x, y, 70, 120);
+      g.fillRect(x - 8, y + 112, 86, 16);
+      g.clearRect(x + 12, y + 14, 46, 34);
+      g.lineWidth = 10;
+      g.strokeStyle = color;
+      g.beginPath();
+      g.moveTo(x + 70, y + 30);
+      g.lineTo(x + 92, y + 30);
+      g.lineTo(x + 92, y + 96);
+      g.stroke();
+    }
   });
 }
 
@@ -215,6 +230,17 @@ export const stopLineTexture = (): THREE.CanvasTexture =>
     g.clearRect(0, 0, w, h);
     g.fillStyle = '#f4f1e8';
     g.fillRect(0, 4, w, h - 8);
+  });
+
+/** Soft dark blob that sits under a vehicle so it looks planted on the road. */
+export const shadowTexture = (): THREE.CanvasTexture =>
+  canvasTexture(128, 128, (g, w, h) => {
+    const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    grad.addColorStop(0, 'rgba(0,0,0,0.75)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
   });
 
 export const lightPoolTexture = (): THREE.CanvasTexture =>

@@ -167,3 +167,13 @@ export function carSummary(car: CarDef, hits = car.hits): string {
   const cls = car.electric && car.cls !== 'electric' ? `${CLASS_LABEL[car.cls]} electric` : CLASS_LABEL[car.cls];
   return `${cls} · ${Math.round(car.top * 3.6)} km/h · ${hits} hit${hits === 1 ? '' : 's'}`;
 }
+
+/** Garage stat bars, each 0–1 against the best car in the game. */
+export function carStats(car: CarDef, hits = car.hits): [string, number][] {
+  return [
+    ['Speed', car.top / 62],
+    ['Pick-up', car.accel / 13],
+    ['Handling', car.handling / 1.5],
+    ['Toughness', Math.min(1, hits / 6)],
+  ];
+}

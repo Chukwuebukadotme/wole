@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MODEL_SIZE, type ModelId, type Paint } from '../rules/cars.ts';
 import { basic, night } from './materials.ts';
-import { box, makeCar, makeTruck } from './models.ts';
+import { box, contactShadow, makeCar, makeTruck } from './models.ts';
 // Low-poly vehicles from Kenney's Car Kit (CC0, see assets/cars/LICENSE-kenney.txt).
 import paletteUrl from '../assets/cars/colormap.png?url';
 import deliveryUrl from '../assets/cars/delivery.glb?url';
@@ -113,7 +113,7 @@ function normalise(source: THREE.Group, model: FileModel): THREE.Group {
     }
   });
   const g = new THREE.Group();
-  g.add(inner);
+  g.add(inner, contactShadow(size.w, size.l));
   const n = night();
   const front = -size.l / 2 - 0.02;
   if (FILES[model].openWheel) {

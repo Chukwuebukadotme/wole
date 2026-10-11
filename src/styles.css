@@ -498,12 +498,20 @@ kbd {
   max-width: 9rem;
 }
 .riders i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+  display: block;
+  width: 13px;
+  height: 17px;
+  line-height: 0;
 }
-.riders i.wide {
-  width: 21px;
+.riders i svg {
+  display: block;
+}
+.paxicon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  background: var(--stripe);
   border-radius: 5px;
 }
 .keys {
@@ -1119,9 +1127,9 @@ h3 {
 }
 .pax li {
   display: grid;
-  grid-template-columns: 12px 8.2em minmax(0, 1fr);
+  grid-template-columns: 28px 8.2em minmax(0, 1fr);
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
   font-size: 0.95rem;
 }
 .dot {
@@ -1163,8 +1171,37 @@ h3 {
   border-radius: 10px;
   padding: 8px 10px;
 }
-.item:not(:has(.swatch)) {
+.item:not(:has(.swatch, .thumb)) {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+.thumb {
+  display: block;
+  width: 96px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: radial-gradient(ellipse at 50% 70%, rgba(20, 20, 20, 0.08), transparent 70%);
+}
+.stats {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 6px;
+  align-items: center;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.stats i {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(20, 20, 20, 0.14);
+  overflow: hidden;
+}
+.stats b {
+  display: block;
+  height: 100%;
+  background: var(--stripe);
 }
 .swatch {
   width: 34px;
