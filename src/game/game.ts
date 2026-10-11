@@ -54,11 +54,13 @@ import {
   type ShopKind,
 } from '../rules/progress.ts';
 import { RACES, placeText, raceById, racePrize, raceTime, raceXp, unlockedRaces, type RaceDef } from '../rules/races.ts';
+import { dailyShift, driverTitle, encodeChallenge, hashString, runAdvice, shortDate, type Challenge, type ShiftStats } from '../rules/shift.ts';
 import { getRoute, placements, stopSerial, stretchAt } from '../rules/route.ts';
 import { clamp, clockText, lerp, metres, mod, money, mulberry32, pick, rand, weighted, type Rng } from '../rules/util.ts';
 import { ChangePanel } from '../ui/change.ts';
 import { Hud, type AlertTone, type RaceHudData } from '../ui/hud.ts';
 import { Screens, type GarageItem, type GarageTab, type OverModel } from '../ui/screens.ts';
+import { drawShareCard, shareNative, whatsappLink, type ShareCard } from '../ui/share.ts';
 import { chooseLane, sideClear, type Body } from './drivers.ts';
 import { Traffic, type Hazard, type TrafficEnv, type Vehicle, type Walker } from './traffic.ts';
 
@@ -68,7 +70,7 @@ const AHEAD = 900;
 const BEHIND = 70;
 
 type Mode = 'loading' | 'title' | 'garage' | 'play' | 'paused' | 'ending' | 'over';
-type EndReason = 'crash' | 'fuel' | 'quit' | 'finish';
+type EndReason = 'crash' | 'fuel' | 'quit' | 'finish' | 'shift';
 
 interface Rider {
   readonly kind: PaxKind;
@@ -119,6 +121,8 @@ interface StationEnt {
 interface JunctionEnt {
   readonly key: string;
   readonly at: number;
+  /** Decides the warden's phases; seeded on the daily shift. */
+  readonly rng: Rng;
   readonly vis: JunctionVisual;
   phase: 'go' | 'stop';
   timer: number;
@@ -152,6 +156,8 @@ interface ChangeTask {
 /** The guided first run: one pickup and one drop-off, step by step. */
 interface Guide {
   step: 'lane' | 'brake' | 'board' | 'drive' | 'done';
+  /** Coach text only, without easing the conditions (a new player's daily shift stays fair). */
+  readonly soft: boolean;
   /** Stop the current step is about; when it changes without a stop, the player drove past. */
   stopKey: string;
   /** Short-lived message, e.g. after a missed stop. */
@@ -289,6 +295,10 @@ interface Run {
   crashes: number;
   /** Fares paid at the current stop, shown as one popup once everyone is off. */
   payout: { amount: number; count: number; notes: string[]; first: boolean } | null;
+  /** Set on the daily shift: the day and the seed everyone shares. */
+  readonly daily: { readonly day: string; readonly seed: number } | null;
+  changeMisses: number;
+  bestStreak: number;
 }
 
 const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
@@ -330,6 +340,12 @@ export class Game {
   private size: { w: number; l: number } = BUS;
   private handling = 1;
   private lastKind: 'run' | 'race' = 'run';
+  private lastRunMode: 'run' | 'daily' = 'run';
+  /** A friend's daily-shift score from a shared link. */
+  private challenge: Challenge | null = null;
+  /** What the Share button sends for the last run. */
+  private shareData: { card: Omit<ShareCard, 'name' | 'url'>; text: string; score: number; day: string | null } | null = null;
+  private shareLink = '';
   private garageMsg = '';
   private dailyText: string | null = null;
   private lastT = 0;
@@ -367,7 +383,10 @@ export class Game {
 
     this.change = new ChangePanel((v) => this.giveChange(v), () => this.undoChange());
     this.screens = new Screens({
-      start: () => this.startRun(),
+      start: () => this.startRun('run'),
+      daily: () => this.startRun('daily'),
+      share: (name) => void this.shareResult(name),
+      copyLink: () => this.copyShareLink(),
       selectRoute: (id) => this.selectRoute(id),
       open: (screen) => (screen === 'garage' ? this.openGarage() : screen === 'missions' ? this.openMissions() : screen === 'race' ? this.openRaces() : this.screens.help()),
       selectRace: (id) => this.selectRace(id),
@@ -383,7 +402,7 @@ export class Game {
       toggleSound: () => this.toggleMute(),
       resume: () => this.resume(),
       quit: () => this.endRun('quit'),
-      again: () => (this.lastKind === 'race' ? this.startRace() : this.startRun()),
+      again: () => (this.lastKind === 'race' ? this.startRace() : this.startRun(this.lastRunMode)),
       garageTab: (tab) => {
         this.garageTab = tab;
         this.garageMsg = '';
@@ -478,8 +497,24 @@ export class Game {
       dailyBonus: this.dailyText,
       autoChange: this.save.settings.autoChange,
       muted: this.save.settings.muted,
+      shift: this.shiftCard(),
+      challenge: this.challengeText(),
     });
     this.dailyText = null;
+  }
+
+  private shiftCard(): { route: string; date: string; best: string | null } {
+    const day = watDayKey(new Date());
+    const rec = this.save.shift;
+    return { route: getRoute(dailyShift(day).route).name, date: shortDate(day), best: rec.day === day && rec.best !== null ? money(rec.best) : null };
+  }
+
+  private challengeText(): string | null {
+    const c = this.challenge;
+    if (!c) return null;
+    const day = watDayKey(new Date());
+    if (c.day === day) return `${c.name} made ${money(c.score)} on today's shift. Can you beat it?`;
+    return `${c.name}'s challenge was for ${shortDate(c.day)}. Today's shift is a fresh one: set a score and send yours back.`;
   }
 
   private selectRoute(id: RouteId): void {
@@ -661,34 +696,44 @@ export class Game {
   }
 
   // ---------- Run lifecycle ----------
-  private startRun(): void {
+  /** `daily` is today's shared shift: one lap of the day's route in a standard danfo, the road seeded by the date. */
+  private startRun(mode: 'run' | 'daily'): void {
     this.sound.unlock();
     this.screens.hideAll();
     this.clearRace();
     this.lastKind = 'run';
+    this.lastRunMode = mode;
     this.showRide('danfo');
-    // A new player's first shift is guided: Ikorodu Road, clear daylight, the extra systems switched off.
-    const guided = !this.save.guided;
-    this.route = guided ? getRoute('ikorodu') : this.routeFromSave();
-    this.resetWorld(this.dist);
+    const day = watDayKey(new Date());
+    const shift = mode === 'daily' ? { day, ...dailyShift(day) } : null;
+    // A new player's first normal shift is guided: Ikorodu Road, clear daylight, the extra systems switched off.
+    // On the daily shift the guide only talks, so the conditions stay the same as everyone else's.
+    const firstTime = !this.save.guided;
+    const guided = firstTime && !shift;
+    this.route = shift ? getRoute(shift.route) : guided ? getRoute('ikorodu') : this.routeFromSave();
+    this.resetWorld(this.dist, shift ? mulberry32(shift.seed) : Math.random);
     const level = this.level();
     fillMissions(this.save.missions, level, Math.random);
     startRunMissions(this.save.missions);
     const haze = guided ? 0 : this.event.weather === 'harmattan' ? 0.85 : isHarmattanSeason(new Date()) ? 0.55 : 0;
     const rainy = !guided && this.event.weather === 'rainy';
+    const weather = shift ? mulberry32(hashString(`${shift.seed}:weather`)) : Math.random;
+    // Everyone drives the same standard danfo on the daily shift.
+    const body = shift ? TUNING.baseBody : bodyMax(this.save);
+    const tank = shift ? TUNING.baseTank : tankSize(this.save);
     this.run = {
       t: 0,
       hour: guided ? 9 : this.event.startHour,
       braking: false,
       gas: false,
       parked: null,
-      body: bodyMax(this.save),
-      bodyMax: bodyMax(this.save),
+      body,
+      bodyMax: body,
       invuln: 0,
-      fuel: tankSize(this.save),
-      tank: tankSize(this.save),
-      seats: seatCount(this.save),
-      brakeFactor: brakeFactor(this.save),
+      fuel: tank,
+      tank,
+      seats: shift ? TUNING.baseSeats : seatCount(this.save),
+      brakeFactor: shift ? 1 : brakeFactor(this.save),
       fuelWarned: false,
       emptyT: 0,
       cash: 0,
@@ -712,8 +757,8 @@ export class Game {
       rain: rainy ? 0.7 : 0,
       rainTarget: rainy ? 0.7 : 0,
       haze,
-      nextRainAt: rainy ? rand(40, 70) : !guided && Math.random() < 0.3 ? rand(70, 200) : Number.POSITIVE_INFINITY,
-      rainUntil: rainy ? rand(60, 100) : 0,
+      nextRainAt: rainy ? rand(40, 70, weather) : !guided && weather() < 0.3 ? rand(70, 200, weather) : Number.POSITIVE_INFINITY,
+      rainUntil: rainy ? rand(60, 100, weather) : 0,
       cleanMetres: 0,
       nightAcc: 0,
       potholeT: 0,
@@ -731,11 +776,15 @@ export class Game {
       rivalChecked: '',
       rivalsMet: 0,
       rivalsBeaten: 0,
-      guide: guided ? { step: 'lane', stopKey: '', note: '', noteT: 0 } : null,
+      guide: firstTime ? { step: 'lane', soft: !guided, stopKey: '', note: '', noteT: 0 } : null,
       missed: 0,
       crashes: 0,
       payout: null,
+      daily: shift ? { day: shift.day, seed: shift.seed } : null,
+      changeMisses: 0,
+      bestStreak: 0,
     };
+    if (shift) this.hud.say(`Daily shift: ${this.route.name}. Same road for everyone today. Drive to the end of the route.`, 'info');
     this.speed = Math.max(this.speed, 8);
     this.lane = 1;
     this.air = false;
@@ -804,33 +853,58 @@ export class Game {
     s.xp += runXp + rewards.xp;
     const after = levelInfo(s.xp).level;
     fillMissions(s.missions, after, Math.random);
-    const newBest = r.cash > s.best.cash;
+    const prevBest = s.best.cash;
     s.best = { cash: Math.max(s.best.cash, r.cash), dist: Math.max(s.best.dist, driven) };
     s.stats.runs += 1;
     s.stats.delivered += r.delivered;
     s.stats.metres += driven;
+
+    // Compare with a friend's challenge, today's best on the daily shift, or your best run.
+    let compare: string | null = null;
+    const daily = r.daily;
+    if (daily) {
+      const rec = s.shift.day === daily.day ? s.shift : { day: daily.day, best: null, tries: 0 };
+      const earlier = rec.best;
+      rec.tries += 1;
+      rec.best = earlier === null ? r.cash : Math.max(earlier, r.cash);
+      s.shift = rec;
+      const ch = this.challenge?.day === daily.day ? this.challenge : null;
+      if (ch) compare = r.cash > ch.score ? `You beat ${ch.name} by ${money(r.cash - ch.score)}!` : r.cash === ch.score ? `Dead heat with ${ch.name}!` : `${money(ch.score - r.cash)} short of ${ch.name}. Try again!`;
+      else if (earlier === null) compare = 'Your first go at today’s shift. Share it and challenge a friend.';
+      else compare = r.cash > earlier ? `New best today, up ${money(r.cash - earlier)}!` : `${money(earlier - r.cash)} short of your best today (${money(earlier)}).`;
+    } else if (r.cash > prevBest && r.cash > 0) compare = prevBest > 0 ? `New best run, up ${money(r.cash - prevBest)}!` : 'Your first take-home. Well done!';
+    else if (prevBest > 0) compare = `${money(prevBest - r.cash)} short of your best run (${money(prevBest)}).`;
     this.persist();
 
     const unlocked = [
       ...ROUTES.filter((rt) => rt.unlockLevel > before && rt.unlockLevel <= after).map((rt) => `route ${rt.name}`),
       ...RACES.filter((rc) => rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
     ];
-    const reasons: Record<EndReason, [string, string]> = {
-      crash: ['Bodywork finished', 'Too many crashes'],
-      fuel: ['Fuel finish!', 'The tank ran dry'],
-      quit: ['Run ended', 'You parked for the day'],
-      finish: ['Run ended', 'You crossed the line'],
-    };
-    const [title, reason] = reasons[r.endReason];
+    const titles: Record<EndReason, string> = { crash: 'Bodywork finished', fuel: 'Fuel finish!', quit: 'You parked for the day', finish: 'Run ended', shift: 'Shift complete!' };
+    const fines = r.fines + r.tolls;
+    const stats: ShiftStats = { cash: r.cash, delivered: r.delivered, missed: r.missed, crashes: r.crashes, fines, changeMisses: r.changeMisses, bestStreak: r.bestStreak, ended: r.endReason };
+    const summary = [
+      `${r.delivered} delivered`,
+      r.missed ? `${r.missed} missed` : '',
+      r.crashes ? `${r.crashes} crash${r.crashes === 1 ? '' : 'es'}` : 'no crashes',
+      fines ? `${money(fines)} fines` : '',
+      metres(driven),
+    ].filter(Boolean).join(' · ');
+    const driver = driverTitle(stats);
     const model: OverModel = {
-      title,
-      reason: `${reason} · ${metres(driven)} · ${r.delivered} delivered`,
+      title: titles[r.endReason],
+      reason: daily ? `Daily shift · ${shortDate(daily.day)} · ${this.route.name}` : `${this.route.name} shift`,
+      headline: money(r.cash),
+      summary,
+      compare,
+      driver,
+      advice: runAdvice(stats),
       lines: [
         ['Fares', money(r.fares)],
         ['Tips and bonuses', money(r.tips)],
         ['₦20 notes', money(r.notes)],
         ['Fuel bought', `−${money(r.fuelSpent)}`],
-        ['Fines and toll', `−${money(r.fines + r.tolls)}`],
+        ['Fines and toll', `−${money(fines)}`],
         ['Mission rewards', money(rewards.bank)],
         ...(r.rivalsMet > 0 ? [['Rival danfos beaten', `${r.rivalsBeaten} of ${r.rivalsMet}`] as [string, string]] : []),
       ],
@@ -838,9 +912,67 @@ export class Game {
       bank: money(s.bank),
       missions: r.missionsDone.map((m) => missionText(m)),
       levelUp: after > before ? `Level ${after}!${unlocked.length ? ` New ${unlocked.join(', new ')}.` : ''} +${runXp + rewards.xp} XP` : `+${runXp + rewards.xp} XP`,
-      best: newBest && r.cash > 0 ? 'New best run!' : null,
+      again: daily ? 'Try the shift again' : 'Drive again',
+      name: s.name,
+    };
+    this.shareData = {
+      card: {
+        badge: daily ? `Daily shift · ${shortDate(daily.day)}` : `${this.route.name} shift`,
+        amount: money(r.cash),
+        amountLabel: daily ? `take-home on ${this.route.name}` : 'take-home',
+        driver,
+        lines: [
+          ['Passengers delivered', String(r.delivered)],
+          ['Missed stops', String(r.missed)],
+          ['Crashes', String(r.crashes)],
+          ['Fines', money(fines)],
+        ],
+        cta: 'Can you beat my shift?',
+      },
+      text: daily
+        ? `I made ${money(r.cash)} on today's Wole Wole danfo shift (${this.route.name}). Can you beat it?`
+        : `I made ${money(r.cash)} driving a Lagos danfo on ${this.route.name} in Wole Wole. Can you beat it?`,
+      score: r.cash,
+      day: daily ? daily.day : null,
     };
     this.screens.over(model);
+  }
+
+  // ---------- Sharing and challenges ----------
+  /** A friend's challenge from a shared link (null if none or malformed). */
+  setChallenge(c: Challenge | null): void {
+    this.challenge = c;
+    if (this.mode === 'title') this.showTitle();
+  }
+
+  private gameUrl(): string {
+    return `${window.location.origin}${window.location.pathname}`;
+  }
+
+  /** Share the last result: card image and message through the share sheet, or the fallback panel. */
+  private async shareResult(name: string): Promise<void> {
+    const d = this.shareData;
+    if (!d) return;
+    this.save.name = name.trim().slice(0, 24);
+    this.persist();
+    // Daily shifts share a challenge link; other runs share the game itself.
+    const url = d.day ? `${this.gameUrl()}?c=${encodeChallenge({ day: d.day, score: d.score, name: this.save.name || 'A friend' })}` : this.gameUrl();
+    this.shareLink = url;
+    const card = await drawShareCard({ ...d.card, name: this.save.name, url });
+    if (await shareNative(card, d.text, url)) return;
+    this.screens.sharePanel({ image: card ? URL.createObjectURL(card) : '', whatsapp: whatsappLink(d.text, url), url });
+  }
+
+  private copyShareLink(): void {
+    const link = this.shareLink;
+    if (!navigator.clipboard) {
+      this.screens.shareStatus(link);
+      return;
+    }
+    navigator.clipboard.writeText(link).then(
+      () => this.screens.shareStatus('Link copied. Paste it to a friend.'),
+      () => this.screens.shareStatus(link),
+    );
   }
 
   // ---------- Controls (called from input.ts) ----------
@@ -1049,8 +1181,13 @@ export class Game {
       this.updateRace(dt, r, r.race);
       return;
     }
+    // The daily shift is one lap of the route.
+    if (r.daily && this.dist - this.runStart >= this.route.length) {
+      this.endRun('shift');
+      return;
+    }
     r.t += dt;
-    r.hour = (r.guide ? 9 : this.event.startHour) + r.t * TUNING.clockRate;
+    r.hour = (r.guide && !r.guide.soft ? 9 : this.event.startHour) + r.t * TUNING.clockRate;
     this.updateWeather(dt, r);
     r.invuln = Math.max(0, r.invuln - dt);
     r.bumpT = Math.max(0, r.bumpT - dt);
@@ -1273,6 +1410,9 @@ export class Game {
       missed: 0,
       crashes: 0,
       payout: null,
+      daily: null,
+      changeMisses: 0,
+      bestStreak: 0,
     };
     for (const [word, at] of [['START', start + this.size.l / 2 + 0.6], ['FINISH', finish]] as const) {
       const group = makeRaceGate(word);
@@ -1499,8 +1639,15 @@ export class Game {
   }
 
   // ---------- Guided first run and one-time tips ----------
+  /** True while the first run is easing the conditions for a new player. */
   private guiding(r: Run): boolean {
-    return r.guide !== null && r.guide.step !== 'done';
+    return r.guide !== null && r.guide.step !== 'done' && !r.guide.soft;
+  }
+
+  /** Randomness for a gameplay decision: shared by everyone on the daily shift, free otherwise. */
+  private rngFor(key: string): Rng {
+    const d = this.run?.daily;
+    return d ? mulberry32(hashString(`${d.seed}:${key}`)) : Math.random;
   }
 
   /** Show a tip the first time something comes up; never again after that. */
@@ -1669,7 +1816,7 @@ export class Game {
 
   private boardRider(r: Run, st: StopEnt, w: Waiting): void {
     // In the guided run everyone gets off at the very next stop.
-    const k = this.guiding(r) ? 1 : weighted([[1, 0.5], [2, 0.32], [3, 0.18]] as const);
+    const k = this.guiding(r) ? 1 : weighted([[1, 0.5], [2, 0.32], [3, 0.18]] as const, this.rngFor(`${st.key}:board:${st.boarded}`));
     const destSerial = st.serial + k;
     const n = this.route.stops.length;
     const lap = Math.floor(destSerial / n);
@@ -1733,10 +1880,10 @@ export class Game {
     this.kick(0.2);
     // The guided first fare is paid exactly; giving change starts after it.
     const guided = this.guiding(r);
-    if (guided) this.finishGuide(r);
-    const paid = paymentFor(fare, Math.random);
+    if (r.guide && r.guide.step !== 'done') this.finishGuide(r);
+    const paid = paymentFor(fare, this.rngFor(`${st.key}:pay:${st.dropped}`));
     // No change-giving at the stop where the guide finishes either, so the celebration is not crowded.
-    const guideStop = r.guide?.step === 'done' && r.guide.stopKey === st.key;
+    const guideStop = !r.guide?.soft && r.guide?.step === 'done' && r.guide.stopKey === st.key;
     if (paid > fare && !this.save.settings.autoChange && !guided && !guideStop) {
       if (r.changeQueue.length === 0) {
         r.changeT = TUNING.changeSeconds;
@@ -1763,6 +1910,7 @@ export class Game {
 
   private changeTimeout(r: Run): void {
     r.complaints += 1;
+    r.changeMisses += 1;
     this.hud.say(pick(LINES.changeBad), 'passenger');
     this.sound.changeBad();
     if (r.complaints >= 3) {
@@ -1785,6 +1933,7 @@ export class Game {
       this.sound.changeBad();
     } else if (st.dropped > 0) {
       r.streak = Math.min(4, r.streak + 1);
+      r.bestStreak = Math.max(r.bestStreak, r.streak);
       r.served += 1;
       this.hud.say(`Clean stop! Fares now ×${streakMult(r.streak)}`, 'info');
       this.hud.popup(`Streak ×${streakMult(r.streak)}`, 'clean stop: fares go up', 'gold');
@@ -1923,8 +2072,9 @@ export class Game {
     const ahead = st.at - this.dist;
     if (ahead < 260 || ahead > 560) return;
     r.rivalChecked = st.key;
-    if (Math.random() > 0.5) return;
-    const d = this.dist + rand(35, 70);
+    const roll = this.rngFor(`${st.key}:rival`);
+    if (roll() > 0.5) return;
+    const d = this.dist + rand(35, 70, roll);
     // A middle lane with room, preferably not the player's.
     const lanes = [1, 2].filter((l) => this.traffic.laneFree(l, d, 16));
     const lane = lanes.find((l) => l !== this.lane) ?? lanes[0];
@@ -1933,10 +2083,10 @@ export class Game {
     v.driver = 'rival';
     v.accel = 4.5;
     v.steer = 4;
-    const name = pick(RIVALS);
+    const name = pick(RIVALS, roll);
     // A bigger tag than racers get: the rival is usually further away.
     v.mesh.add(makeNameTag(name, '#ef5b45', 2.5, 3.4));
-    r.rival = { v, name, stopKey: st.key, stopName: st.name, phase: 'chase', loadT: 0, taken: 0, cap: Math.round(rand(3, 6)), think: 0.5 };
+    r.rival = { v, name, stopKey: st.key, stopName: st.name, phase: 'chase', loadT: 0, taken: 0, cap: Math.round(rand(3, 6, roll)), think: 0.5 };
     r.rivalWait = 0;
     r.rivalsMet += 1;
     this.hud.say(pick(RIVAL_CALLS)(name, st.name), 'conductor');
@@ -2010,16 +2160,16 @@ export class Game {
       if (!j.active && ahead < 300) {
         j.active = true;
         // While guiding, the warden waves everyone through.
-        j.phase = this.guiding(r) ? 'go' : Math.random() < 0.65 ? 'stop' : 'go';
+        j.phase = this.guiding(r) ? 'go' : j.rng() < 0.65 ? 'stop' : 'go';
         if (j.phase === 'stop') this.tip('warden', 'Warden has his hand up: stop before the white line until he waves, or pay ₦500.');
-        j.timer = j.phase === 'stop' ? rand(4, 6) : rand(4, 7);
+        j.timer = j.phase === 'stop' ? rand(4, 6, j.rng) : rand(4, 7, j.rng);
         if (j.phase === 'stop') this.hud.say(pick(LINES.wardenStop), 'info');
       }
       if (!j.active) continue;
       j.timer -= dt;
       if (j.timer <= 0) {
         j.phase = j.phase === 'stop' || this.guiding(r) ? 'go' : 'stop';
-        j.timer = j.phase === 'stop' ? rand(4, 6) : rand(7, 10);
+        j.timer = j.phase === 'stop' ? rand(4, 6, j.rng) : rand(7, 10, j.rng);
         if (j.phase === 'go' && ahead > -2 && ahead < 120) this.hud.say(pick(LINES.wardenGo), 'info');
       }
       if (j.phase === 'stop') {
@@ -2264,11 +2414,12 @@ export class Game {
       const raining = (this.run?.rain ?? 0) > 0.4;
       // The guided run always has a few ordinary passengers waiting.
       const guiding = this.run !== null && this.guiding(this.run);
-      const count = Math.max(guiding ? 3 : 1, clamp(Math.round(def.busy * rand(0.5, 1.15) * this.event.crowdMult * (raining ? 1.5 : 1)), 1, 9));
+      const crowd = this.rngFor(p.key);
+      const count = Math.max(guiding ? 3 : 1, clamp(Math.round(def.busy * rand(0.5, 1.15, crowd) * this.event.crowdMult * (raining ? 1.5 : 1)), 1, 9));
       const weights = this.paxWeights(stretchAt(route, def.at).kind);
       const waiting: Waiting[] = [];
       for (let i = 0; i < count; i++) {
-        const kind: PaxKind = guiding ? 'regular' : weighted(weights);
+        const kind: PaxKind = guiding ? 'regular' : weighted(weights, crowd);
         const mesh = this.figure(kind);
         mesh.position.set(KERB_X + rand(0.9, 2.7), 0.15, rand(-5.5, 5.5));
         mesh.rotation.y = rand(-0.5, 0.5);
@@ -2289,7 +2440,7 @@ export class Game {
       const vis = this.junctionPool.pop() ?? makeJunction();
       vis.group.visible = true;
       if (!vis.group.parent) this.stage.scene.add(vis.group);
-      this.junctions.set(p.key, { key: p.key, at: p.at, vis, phase: 'go', timer: 0, active: false, crossT: 0, crossDir: 1, waited: false, resolved: false });
+      this.junctions.set(p.key, { key: p.key, at: p.at, rng: this.rngFor(p.key), vis, phase: 'go', timer: 0, active: false, crossT: 0, crossDir: 1, waited: false, resolved: false });
     }
     for (const p of placements(route, 'toll', route.tolls, this.runStart, from, to)) {
       if (this.tolls.has(p.key)) continue;

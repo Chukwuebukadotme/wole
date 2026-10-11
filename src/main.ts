@@ -1,6 +1,7 @@
 import { loadCarModels } from './engine/cars.ts';
 import { Game } from './game/game.ts';
 import { bindInput } from './input.ts';
+import { decodeChallenge } from './rules/shift.ts';
 
 function fail(message: string): void {
   const el = document.getElementById('loading');
@@ -30,6 +31,8 @@ try {
     undoChange: () => game.undoChange(),
   });
   game.start();
+  // A friend's daily-shift challenge arrives as ?c=… in a shared link.
+  game.setChallenge(decodeChallenge(new URLSearchParams(window.location.search).get('c')));
   // Traffic uses simple box cars until the 3D models arrive.
   void loadCarModels();
   // Automated play tests read live state through ?debug; normal players never see it.

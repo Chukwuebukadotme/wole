@@ -8,6 +8,8 @@ Built with TypeScript, Three.js and Vite. The city, people and sound are made in
 
 - **Guided first shift:** a new player's first run walks through one pickup and one drop-off step by step (kerb lane, brake in the bay, drop at the next stop) in clear daylight. Fuel, wardens, change and rivals switch on after the first fare, each with a one-time tip the first time it comes up.
 - **Clear feedback:** the stop card counts down to the moment to brake ("Brake in 40 m", "BRAKE NOW", "Too fast!"), stopping a little short of the bay still counts, and crashes, fines, streak changes and passenger bonuses each get a visible reaction.
+- **Daily shift and challenges:** one lap of the day's route in a standard danfo, with the same traffic layout, passengers, wardens, rivals and weather for everyone that day. Share your result as a picture card (phone share sheet, or WhatsApp / copy link / save image) with a link that challenges friends to beat your take-home.
+- **Useful results:** take-home first, then deliveries, missed stops, crashes and fines, how you did against your best or a friend's challenge, a driver title and one tip for next time.
 - **Three routes:** Ikorodu Road (Mile 12 → Fadeyi, with a BRT corridor), Third Mainland (Ebute Metta → CMS over the lagoon bridge, unlocks at level 3) and Lekki Express (Lekki Phase 1 → Ajah with a toll gate, unlocks at level 6).
 - **Street races:** four races on stretches of the routes (Ikorodu Road Sprint, Third Mainland Night Dash, Lekki Big Boys Run and the Eko Night Grand Prix). Line up against four named drivers, weave through normal traffic and finish in the top three for prize money. Each race lays its traffic out the same way every time, so you can learn it and beat your best time.
 - **A proper danfo:** a van-shaped bus with raked windscreen, side windows, mirrors, hubcaps and black stripes; it dips under braking, squats when you floor it and bounces over potholes and as passengers board. Every vehicle sits on a soft shadow.
@@ -39,7 +41,7 @@ Requires Node.js 20.19 or newer.
 ```bash
 npm ci
 npm run dev        # local dev server
-npm test           # rules unit tests (fares, change, saves, missions, routes, daily events, traffic mix, races)
+npm test           # rules unit tests (fares, change, saves, missions, routes, daily events, traffic mix, races, daily shift)
 npm run check      # type-check + tests + production build
 ```
 

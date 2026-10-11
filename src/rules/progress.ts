@@ -43,6 +43,10 @@ export interface SaveData {
   guided: boolean;
   /** One-time tips already shown, by id. */
   tips: string[];
+  /** Name printed on share cards and challenge links. */
+  name: string;
+  /** Today's daily shift: best take-home and how many tries. */
+  shift: { day: string; best: number | null; tries: number };
 }
 
 export function defaultSave(): SaveData {
@@ -64,6 +68,8 @@ export function defaultSave(): SaveData {
     seenHelp: false,
     guided: false,
     tips: [],
+    name: '',
+    shift: { day: '', best: null, tries: 0 },
   };
 }
 
@@ -87,6 +93,7 @@ export function parseSave(raw: unknown): SaveData {
   const stats = isRecord(raw.stats) ? raw.stats : {};
   const daily = isRecord(raw.daily) ? raw.daily : {};
   const settings = isRecord(raw.settings) ? raw.settings : {};
+  const shift = isRecord(raw.shift) ? raw.shift : {};
   const paints = ids(owned.paint, PAINTS.map((p) => p.id), 'eko');
   const stickers = ids(owned.sticker, STICKERS.map((s) => s.id), 'permanent');
   const horns = ids(owned.horn, HORNS.map((h) => h.id), 'classic');
@@ -146,6 +153,12 @@ export function parseSave(raw: unknown): SaveData {
     // Players who already drove before the guide existed skip it.
     guided: bool(raw.guided, num(stats.runs, 0) > 0),
     tips: Array.isArray(raw.tips) ? raw.tips.filter((t): t is string => typeof t === 'string').slice(0, 64) : [],
+    name: str(raw.name, '').slice(0, 24),
+    shift: {
+      day: str(shift.day, ''),
+      best: typeof shift.best === 'number' && Number.isFinite(shift.best) ? shift.best : null,
+      tries: Math.max(0, Math.floor(num(shift.tries, 0))),
+    },
   };
 }
 

@@ -620,6 +620,124 @@ body.touch .keys {
   flex-basis: 100%;
 }
 
+/* ---------- Daily shift, challenges and results ---------- */
+.shift {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--stripe);
+  color: var(--paper);
+}
+.shift b {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.2rem;
+  color: var(--danfo);
+}
+.shift span {
+  font-size: 0.92rem;
+}
+.shift-tag {
+  font-size: 0.75rem !important;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--soft);
+}
+.challenge {
+  display: grid;
+  gap: 8px;
+  background: var(--paper);
+  border: 3px solid var(--stripe);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 1.05rem;
+}
+.result .hero {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+.result .hero .lbl {
+  color: var(--ink);
+  opacity: 0.7;
+}
+.result .hero b {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(2.6rem, 11vw, 3.6rem);
+  line-height: 1;
+}
+.result .driver {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.summary {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.advice {
+  margin: 0;
+  background: rgba(20, 20, 20, 0.08);
+  border-left: 5px solid var(--stripe);
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.35;
+}
+.breakdown summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.namefield {
+  display: grid;
+  gap: 4px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.namefield input {
+  font: inherit;
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 2px solid var(--stripe);
+  background: var(--paper);
+  color: var(--ink);
+  max-width: 18rem;
+}
+.share-btn {
+  background: var(--paper);
+}
+.share-panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(20, 19, 17, 0.6);
+  z-index: 6;
+}
+.share-panel .panel {
+  justify-items: center;
+  text-align: center;
+  max-height: calc(100% - 16px);
+}
+.share-panel img {
+  width: min(270px, 60vw);
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.share-panel a {
+  text-decoration: none;
+  display: inline-block;
+}
+
 /* ---------- Race read-outs ---------- */
 #hud:not(.racing) .race-only,
 #hud.racing .run-only {

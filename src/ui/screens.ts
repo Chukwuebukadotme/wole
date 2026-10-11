@@ -34,6 +34,9 @@ export interface TitleModel {
   readonly dailyBonus: string | null;
   readonly autoChange: boolean;
   readonly muted: boolean;
+  /** Today's shift: route, your best so far, and a friend's challenge if a link brought one. */
+  readonly shift: { readonly route: string; readonly date: string; readonly best: string | null };
+  readonly challenge: string | null;
 }
 
 export type GarageTab = 'car' | 'paint' | 'sticker' | 'horn' | 'upgrade';
@@ -116,16 +119,34 @@ export interface MissionsModel {
 export interface OverModel {
   readonly title: string;
   readonly reason: string;
+  /** Take-home, the one number that matters. */
+  readonly headline: string;
+  /** "6 delivered · 2 missed · 1 crash". */
+  readonly summary: string;
+  /** Against your best or a friend's challenge. */
+  readonly compare: string | null;
+  readonly driver: string;
+  readonly advice: string;
   readonly lines: readonly [string, string][];
   readonly net: string;
   readonly bank: string;
   readonly missions: readonly string[];
   readonly levelUp: string | null;
-  readonly best: string | null;
+  readonly again: string;
+  readonly name: string;
+}
+
+export interface SharePanelModel {
+  readonly image: string;
+  readonly whatsapp: string;
+  readonly url: string;
 }
 
 export interface ScreenActions {
   start(): void;
+  daily(): void;
+  share(name: string): void;
+  copyLink(): void;
   selectRoute(id: RouteId): void;
   open(screen: 'garage' | 'missions' | 'help' | 'race'): void;
   selectRace(id: string): void;
@@ -204,6 +225,18 @@ export class Screens {
           case 'again':
             actions.again();
             break;
+          case 'daily':
+            actions.daily();
+            break;
+          case 'share':
+            actions.share(root.querySelector<HTMLInputElement>('input[data-name]')?.value ?? '');
+            break;
+          case 'copy':
+            actions.copyLink();
+            break;
+          case 'share-close':
+            root.querySelector('.share-panel')?.remove();
+            break;
           case 'tab':
             if (tab) actions.garageTab(tab as GarageTab);
             break;
@@ -254,6 +287,12 @@ export class Screens {
         <h1>Wole Wole</h1>
         <p class="lede">Load passengers, give correct change, mind the warden, and keep your fare streak alive from morning rush to owambe night.</p>
         <div class="event"><span class="event-tag">Today</span><b>${esc(m.event.name)}</b><span>${esc(m.event.line)}</span></div>
+        ${m.challenge ? `<div class="challenge"><b>${esc(m.challenge)}</b><button type="button" class="cta" data-action="daily">Take the challenge</button></div>` : ''}
+        <button type="button" class="shift" data-action="daily">
+          <span class="shift-tag">Daily shift · ${esc(m.shift.date)}</span>
+          <b>${esc(m.shift.route)}</b>
+          <span>${m.shift.best ? `Your best today: ${esc(m.shift.best)} · play again` : 'Same road for everyone today. Set a score and challenge friends.'}</span>
+        </button>
         ${m.dailyBonus ? `<div class="toast">${esc(m.dailyBonus)}</div>` : ''}
         <div class="routes" role="group" aria-label="Choose a route">${routes}</div>
         <div class="row">
@@ -443,19 +482,55 @@ export class Screens {
   over(m: OverModel): void {
     this.show(
       'over',
-      `<div class="card">
-        <span class="eyebrow">${esc(m.reason)}</span>
-        <h2>${esc(m.title)}</h2>
-        <dl class="ledger">${m.lines.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}<div class="net"><dt>Take-home</dt><dd>${esc(m.net)}</dd></div></dl>
-        ${m.missions.length ? `<ul class="done-list">${m.missions.map((t) => `<li>Mission done: ${esc(t)}</li>`).join('')}</ul>` : ''}
-        ${m.levelUp ? `<p class="toast">${esc(m.levelUp)}</p>` : ''}
-        <div class="row"><span class="wallet">Bank: ${esc(m.bank)}</span>${m.best ? `<span class="badge">${esc(m.best)}</span>` : ''}</div>
-        <div class="row">
-          <button type="button" class="cta" data-action="again" data-focus>Drive again</button>
+      `<div class="card sheet result">
+        <div class="sheet-head"><span class="eyebrow">${esc(m.reason)}</span><h2>${esc(m.title)}</h2></div>
+        <div class="scroll">
+          <div class="hero"><span class="lbl">Take-home</span><b>${esc(m.headline)}</b><span class="driver">“${esc(m.driver)}”</span></div>
+          <p class="summary">${esc(m.summary)}</p>
+          ${m.compare ? `<p class="toast">${esc(m.compare)}</p>` : ''}
+          <p class="advice"><b>Next time:</b> ${esc(m.advice)}</p>
+          ${m.missions.length ? `<ul class="done-list">${m.missions.map((t) => `<li>Mission done: ${esc(t)}</li>`).join('')}</ul>` : ''}
+          ${m.levelUp ? `<p class="toast">${esc(m.levelUp)}</p>` : ''}
+          <details class="breakdown"><summary>Money breakdown</summary>
+            <dl class="ledger">${m.lines.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}<div class="net"><dt>Take-home</dt><dd>${esc(m.net)}</dd></div></dl>
+          </details>
+          <div class="row"><span class="wallet">Bank: ${esc(m.bank)}</span></div>
+          <label class="namefield">Name on your share card <input type="text" data-name maxlength="24" autocomplete="nickname" placeholder="e.g. Ada" value="${esc(m.name)}"></label>
+        </div>
+        <div class="actions row">
+          <button type="button" class="cta" data-action="again" data-focus>${esc(m.again)}</button>
+          <button type="button" class="ghost share-btn" data-action="share">Share</button>
           <button type="button" class="ghost" data-action="open" data-id="garage">Garage</button>
           <button type="button" class="ghost" data-action="home">Home</button>
         </div>
       </div>`,
     );
+  }
+
+  /** Fallback share options when the browser has no share sheet. */
+  sharePanel(m: SharePanelModel): void {
+    const root = this.roots.over;
+    root.querySelector('.share-panel')?.remove();
+    const panel = document.createElement('div');
+    panel.className = 'share-panel';
+    panel.innerHTML = `<div class="panel">
+        <h3>Share your shift</h3>
+        <img src="${m.image}" alt="Your share card" width="270" height="338">
+        <div class="row">
+          <a class="cta" href="${esc(m.whatsapp)}" target="_blank" rel="noopener">WhatsApp</a>
+          <button type="button" class="ghost" data-action="copy">Copy link</button>
+          <a class="ghost" href="${m.image}" download="wole-wole.png">Save image</a>
+        </div>
+        <p class="message" role="status"></p>
+        <button type="button" class="ghost" data-action="share-close">Close</button>
+      </div>`;
+    root.appendChild(panel);
+    panel.querySelector<HTMLElement>('.cta')?.focus({ preventScroll: true });
+  }
+
+  /** Short status line inside the share panel, e.g. "Link copied". */
+  shareStatus(text: string): void {
+    const el = this.roots.over.querySelector('.share-panel .message');
+    if (el) el.textContent = text;
   }
 }
