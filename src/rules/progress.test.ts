@@ -87,3 +87,11 @@ test('missions progress, complete, pay out and refill', () => {
   assert.equal(reward.bank, 1600);
   assert.equal(missions.length, 3);
 });
+
+test('new players get the guided first run; players with runs behind them skip it', () => {
+  assert.equal(defaultSave().guided, false);
+  assert.equal(parseSave({ stats: { runs: 4 } }).guided, true);
+  assert.equal(parseSave({ stats: { runs: 0 } }).guided, false);
+  assert.equal(parseSave({ guided: true }).guided, true);
+  assert.deepEqual(parseSave({ tips: ['fuel', 7, 'warden'] }).tips, ['fuel', 'warden']);
+});

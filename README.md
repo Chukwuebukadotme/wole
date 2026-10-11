@@ -6,6 +6,8 @@ Built with TypeScript, Three.js and Vite. The city, people and sound are made in
 
 ## What's in the game
 
+- **Guided first shift:** a new player's first run walks through one pickup and one drop-off step by step (kerb lane, brake in the bay, drop at the next stop) in clear daylight. Fuel, wardens, change and rivals switch on after the first fare, each with a one-time tip the first time it comes up.
+- **Clear feedback:** the stop card counts down to the moment to brake ("Brake in 40 m", "BRAKE NOW", "Too fast!"), stopping a little short of the bay still counts, and crashes, fines, streak changes and passenger bonuses each get a visible reaction.
 - **Three routes:** Ikorodu Road (Mile 12 → Fadeyi, with a BRT corridor), Third Mainland (Ebute Metta → CMS over the lagoon bridge, unlocks at level 3) and Lekki Express (Lekki Phase 1 → Ajah with a toll gate, unlocks at level 6).
 - **Street races:** four races on stretches of the routes (Ikorodu Road Sprint, Third Mainland Night Dash, Lekki Big Boys Run and the Eko Night Grand Prix). Line up against four named drivers, weave through normal traffic and finish in the top three for prize money. Each race lays its traffic out the same way every time, so you can learn it and beat your best time.
 - **Cars to buy:** nine cars for racing alongside your danfo, from the Tokunbo Saloon and Yaba Hot Hatch to SUVs, luxury cars, electric cars and two exotics. Each has its own top speed, pull-away, handling and toughness; electric cars whine instead of growl. Passenger runs stay in the danfo.

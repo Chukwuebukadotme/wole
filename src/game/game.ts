@@ -148,6 +148,16 @@ interface ChangeTask {
   readonly due: number;
 }
 
+/** The guided first run: one pickup and one drop-off, step by step. */
+interface Guide {
+  step: 'lane' | 'brake' | 'board' | 'drive' | 'done';
+  /** Stop the current step is about; when it changes without a stop, the player drove past. */
+  stopKey: string;
+  /** Short-lived message, e.g. after a missed stop. */
+  note: string;
+  noteT: number;
+}
+
 interface Rival {
   readonly v: Vehicle;
   readonly name: string;
@@ -271,6 +281,13 @@ interface Run {
   rivalChecked: string;
   rivalsMet: number;
   rivalsBeaten: number;
+  /** Set while a new player is being guided through the first pickup and drop-off. */
+  guide: Guide | null;
+  /** Passengers carried past their stop, and crashes, for the results advice. */
+  missed: number;
+  crashes: number;
+  /** Fares paid at the current stop, shown as one popup once everyone is off. */
+  payout: { amount: number; count: number; notes: string[]; first: boolean } | null;
 }
 
 const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
@@ -626,26 +643,22 @@ export class Game {
   // ---------- Run lifecycle ----------
   private startRun(): void {
     this.sound.unlock();
-    if (!this.save.seenHelp) {
-      this.save.seenHelp = true;
-      this.persist();
-      this.screens.help('start');
-      return;
-    }
     this.screens.hideAll();
     this.clearRace();
     this.lastKind = 'run';
     this.showRide('danfo');
-    this.route = this.routeFromSave();
+    // A new player's first shift is guided: Ikorodu Road, clear daylight, the extra systems switched off.
+    const guided = !this.save.guided;
+    this.route = guided ? getRoute('ikorodu') : this.routeFromSave();
     this.resetWorld(this.dist);
     const level = this.level();
     fillMissions(this.save.missions, level, Math.random);
     startRunMissions(this.save.missions);
-    const haze = this.event.weather === 'harmattan' ? 0.85 : isHarmattanSeason(new Date()) ? 0.55 : 0;
-    const rainy = this.event.weather === 'rainy';
+    const haze = guided ? 0 : this.event.weather === 'harmattan' ? 0.85 : isHarmattanSeason(new Date()) ? 0.55 : 0;
+    const rainy = !guided && this.event.weather === 'rainy';
     this.run = {
       t: 0,
-      hour: this.event.startHour,
+      hour: guided ? 9 : this.event.startHour,
       braking: false,
       gas: false,
       parked: null,
@@ -679,7 +692,7 @@ export class Game {
       rain: rainy ? 0.7 : 0,
       rainTarget: rainy ? 0.7 : 0,
       haze,
-      nextRainAt: rainy ? rand(40, 70) : Math.random() < 0.3 ? rand(70, 200) : Number.POSITIVE_INFINITY,
+      nextRainAt: rainy ? rand(40, 70) : !guided && Math.random() < 0.3 ? rand(70, 200) : Number.POSITIVE_INFINITY,
       rainUntil: rainy ? rand(60, 100) : 0,
       cleanMetres: 0,
       nightAcc: 0,
@@ -698,6 +711,10 @@ export class Game {
       rivalChecked: '',
       rivalsMet: 0,
       rivalsBeaten: 0,
+      guide: guided ? { step: 'lane', stopKey: '', note: '', noteT: 0 } : null,
+      missed: 0,
+      crashes: 0,
+      payout: null,
     };
     this.speed = Math.max(this.speed, 8);
     this.lane = 1;
@@ -1012,7 +1029,7 @@ export class Game {
       return;
     }
     r.t += dt;
-    r.hour = this.event.startHour + r.t * TUNING.clockRate;
+    r.hour = (r.guide ? 9 : this.event.startHour) + r.t * TUNING.clockRate;
     this.updateWeather(dt, r);
     r.invuln = Math.max(0, r.invuln - dt);
     r.bumpT = Math.max(0, r.bumpT - dt);
@@ -1028,10 +1045,11 @@ export class Game {
 
     const moved = this.speed * dt;
     this.dist += moved;
-    r.fuel = Math.max(0, r.fuel - moved * TUNING.litresPerMetre * (this.speed > 24 ? 1.2 : 1));
+    if (!this.guiding(r)) r.fuel = Math.max(0, r.fuel - moved * TUNING.litresPerMetre * (this.speed > 24 ? 1.2 : 1));
     if (r.fuel < r.tank * 0.2 && !r.fuelWarned) {
       r.fuelWarned = true;
       this.hud.say(pick(LINES.fuelLow), 'conductor');
+      this.tip('fuel', 'Fuel low: move to the kerb lane and brake in a green FUEL bay to buy more.');
     }
     if (r.fuel > r.tank * 0.35) r.fuelWarned = false;
     if (empty && this.speed < 0.3 && !r.parked) {
@@ -1059,6 +1077,7 @@ export class Game {
     this.trackBridge(kind, r);
 
     this.updateStops(dt, r);
+    this.updateGuide(dt, r);
     this.updateRival(dt, r);
     this.updateStations(dt, r);
     this.updateJunctions(dt, r);
@@ -1092,7 +1111,7 @@ export class Game {
   private loseStreak(label: string): void {
     const r = this.run;
     if (!r) return;
-    if (r.streak > 0) this.hud.popup(label, 'streak reset', 'bad');
+    if (r.streak > 0) this.hud.popup('Streak lost', label, 'bad');
     r.streak = 0;
   }
 
@@ -1229,6 +1248,10 @@ export class Game {
       rivalChecked: '',
       rivalsMet: 0,
       rivalsBeaten: 0,
+      guide: null,
+      missed: 0,
+      crashes: 0,
+      payout: null,
     };
     for (const [word, at] of [['START', start + this.size.l / 2 + 0.6], ['FINISH', finish]] as const) {
       const group = makeRaceGate(word);
@@ -1454,6 +1477,80 @@ export class Game {
     });
   }
 
+  // ---------- Guided first run and one-time tips ----------
+  private guiding(r: Run): boolean {
+    return r.guide !== null && r.guide.step !== 'done';
+  }
+
+  /** Show a tip the first time something comes up; never again after that. */
+  private tip(id: string, text: string): void {
+    if (this.save.tips.includes(id) || (this.run && this.guiding(this.run))) return;
+    this.save.tips.push(id);
+    this.persist();
+    this.hud.tip(text, 6);
+  }
+
+  /** Walk a new player through one pickup and one drop-off. */
+  private updateGuide(dt: number, r: Run): void {
+    const g = r.guide;
+    if (!g || g.step === 'done') {
+      this.hud.coach(null);
+      return;
+    }
+    g.noteT = Math.max(0, g.noteT - dt);
+    const st = this.nextStop();
+    const touch = document.body.classList.contains('touch');
+    const brake = touch ? 'Hold BRAKE' : 'Hold ↓';
+    // Drove past the stop without stopping: try again at the next one.
+    if (st && g.stopKey && st.key !== g.stopKey && (g.step === 'brake' || g.step === 'lane')) {
+      g.note = 'You passed that stop. No wahala, try the next one.';
+      g.noteT = 4;
+    }
+    if (st) g.stopKey = st.key;
+    if (g.step === 'lane' || g.step === 'brake') g.step = r.parked?.kind === 'stop' ? 'board' : this.lane === KERB ? 'brake' : 'lane';
+    if (g.step === 'board' && !r.parked) g.step = r.riders.length > 0 ? 'drive' : 'lane';
+    if (g.step === 'drive' && !r.parked && r.riders.length === 0) {
+      g.note = 'They got off without you. Pick up more at the next stop.';
+      g.noteT = 4;
+      g.step = 'lane';
+    }
+    let text: string;
+    if (g.noteT > 0) text = g.note;
+    else if (g.step === 'lane') text = touch ? 'Step 1 of 3 · Swipe right to move into the kerb lane →' : 'Step 1 of 3 · Press → to move into the kerb lane';
+    else if (g.step === 'brake') {
+      const cue = st ? this.brakeCue(r, st) : null;
+      text = cue?.tone === 'now' ? `Step 2 of 3 · ${brake} NOW to stop in the yellow bay` : `Step 2 of 3 · ${brake} when the yellow bay comes up. The stop card tells you when.`;
+    } else if (g.step === 'board') text = 'Passengers are getting on. The bus pulls off by itself when they are in.';
+    else {
+      const dest = r.riders[0]?.destName ?? 'the next stop';
+      text = `Step 3 of 3 · Drop them at ${dest}: stay in the kerb lane and ${brake.toLowerCase()} in the next bay.`;
+    }
+    this.hud.coach(text);
+  }
+
+  /** The first fare is in: celebrate, then switch on the full shift. */
+  private finishGuide(r: Run): void {
+    if (!r.guide) return;
+    r.guide.step = 'done';
+    this.hud.coach(null);
+    this.save.guided = true;
+    this.persist();
+    if (r.payout) r.payout.first = true;
+    this.sound.jingle();
+    this.hud.tip('Nice one! Clean stops raise your fare streak. From now on watch your fuel, the warden and your change.', 7);
+  }
+
+  /** How urgently to brake for the bay at the current speed. */
+  private brakeCue(r: Run, st: StopEnt): { text: string; tone: 'go' | 'now' | 'late' } {
+    const decel = TUNING.brake * r.brakeFactor * lerp(1, 0.72, r.rain);
+    const stopping = (this.speed * this.speed) / (2 * decel);
+    const toEnd = st.at + TUNING.zoneAfter - this.dist;
+    if (stopping > toEnd - 1) return { text: 'Too fast! Brake hard', tone: 'late' };
+    const spare = st.at - this.dist - stopping;
+    if (spare <= 12) return { text: 'BRAKE NOW', tone: 'now' };
+    return { text: `Brake in ${Math.max(5, Math.round((spare - 12) / 5) * 5)} m`, tone: 'go' };
+  }
+
   // ---------- Bus stops ----------
   private nextStop(): StopEnt | null {
     let best: StopEnt | null = null;
@@ -1487,7 +1584,8 @@ export class Game {
       else if (boardable) this.hud.say(pick(CALLS)(st.name), 'conductor');
       else if (st.waiting.length > 0) this.hud.say(pick(LINES.full), 'conductor');
     }
-    const inZone = rel > -TUNING.zoneBefore && rel < TUNING.zoneAfter;
+    // Stopping a little short of the bay still counts.
+    const inZone = rel > -(TUNING.zoneBefore + TUNING.shortStop) && rel < TUNING.zoneAfter;
     if (!r.parked && !st.left && inZone && this.atKerb() && this.speed < TUNING.parkBelow && !this.air && (drops > 0 || boardable)) {
       r.parked = { kind: 'stop', key: st.key, leaveT: 0 };
       r.loadT = 0.25;
@@ -1519,6 +1617,7 @@ export class Game {
         break;
       }
       const after = this.stopBusiness(r, st);
+      if (after.drops === 0) this.flushPayout(r);
       const busy = after.drops > 0 || after.boardable;
       const changing = r.changeQueue.length > 0 && !this.save.settings.autoChange;
       if (!busy && !changing) {
@@ -1548,7 +1647,8 @@ export class Game {
   }
 
   private boardRider(r: Run, st: StopEnt, w: Waiting): void {
-    const k = weighted([[1, 0.5], [2, 0.32], [3, 0.18]] as const);
+    // In the guided run everyone gets off at the very next stop.
+    const k = this.guiding(r) ? 1 : weighted([[1, 0.5], [2, 0.32], [3, 0.18]] as const);
     const destSerial = st.serial + k;
     const n = this.route.stops.length;
     const lap = Math.floor(destSerial / n);
@@ -1562,6 +1662,7 @@ export class Game {
     this.sound.board();
     if (w.kind === 'trader') this.hud.say('Mama with basin don enter. Two seats!', 'info');
     if (r.seats - this.seatsUsed(r) <= 0) this.hud.say(pick(LINES.full), 'conductor');
+    if (w.kind !== 'regular') this.tip(`pax:${w.kind}`, `${PAX[w.kind].label} on board: ${PAX[w.kind].perk}`);
   }
 
   private fareMult(): number {
@@ -1575,16 +1676,19 @@ export class Game {
     if (rider.kind === 'worker') {
       if (r.t <= rider.deadline) {
         extra += Math.round((fare * 0.5) / 10) * 10;
-        notes.push('on time');
+        notes.push('Office worker on time +50%');
         this.hud.say(pick(LINES.worker), 'passenger');
       } else this.hud.say(pick(LINES.workerLate), 'passenger');
     }
     if (rider.kind === 'baba' && rider.smooth) {
       extra += fare;
-      notes.push('smooth ride');
+      notes.push('Baba: smooth ride ×2');
       this.hud.say(pick(LINES.baba), 'passenger');
     }
-    if (rider.kind !== 'hawker' && r.riders.some((o) => o.kind === 'hawker')) extra += Math.round((fare * 0.1) / 10) * 10;
+    if (rider.kind !== 'hawker' && r.riders.some((o) => o.kind === 'hawker')) {
+      extra += Math.round((fare * 0.1) / 10) * 10;
+      notes.push('Hawker snacks +10%');
+    }
     if (rider.kind === 'preacher') {
       r.streak = Math.min(4, r.streak + 1);
       this.hud.say(pick(LINES.preacher), 'passenger');
@@ -1599,21 +1703,39 @@ export class Game {
     if (rider.kind === 'trader') this.emit('traderDelivered', 1);
     if (r.rain > 0.4) this.emit('rainDeliver', 1);
     this.emit('earnRun', r.cash);
-    this.hud.popup(`+${money(fare + extra)}`, [r.streak > 0 ? `×${streakMult(r.streak)}` : '', ...notes].filter(Boolean).join(' · '));
+    const p = (r.payout ??= { amount: 0, count: 0, notes: [], first: false });
+    p.amount += fare + extra;
+    p.count += 1;
+    for (const n of notes) if (!p.notes.includes(n)) p.notes.push(n);
     this.sound.fare();
+    // The guided first fare is paid exactly; giving change starts after it.
+    const guided = this.guiding(r);
+    if (guided) this.finishGuide(r);
     const paid = paymentFor(fare, Math.random);
-    if (paid > fare && !this.save.settings.autoChange) {
+    // No change-giving at the stop where the guide finishes either, so the celebration is not crowded.
+    const guideStop = r.guide?.step === 'done' && r.guide.stopKey === st.key;
+    if (paid > fare && !this.save.settings.autoChange && !guided && !guideStop) {
       if (r.changeQueue.length === 0) {
         r.changeT = TUNING.changeSeconds;
         r.changeGiven = [];
       }
       r.changeQueue.push({ who: PAX[rider.kind].label, fare, paid, due: paid - fare });
     }
-    const p = this.figure(rider.kind);
+    const fig = this.figure(rider.kind);
     const z = -1.6 - st.vis.group.position.z;
-    p.position.set(this.x + 1.3, 0.15, z);
-    st.vis.group.add(p);
-    st.movers.push({ mesh: p, kind: rider.kind, t: 0, board: false, x0: this.x + 1.3, z0: z, x1: KERB_X + rand(1, 2.6), z1: z, dir: Math.random() < 0.5 ? 1 : -1 });
+    fig.position.set(this.x + 1.3, 0.15, z);
+    st.vis.group.add(fig);
+    st.movers.push({ mesh: fig, kind: rider.kind, t: 0, board: false, x0: this.x + 1.3, z0: z, x1: KERB_X + rand(1, 2.6), z1: z, dir: Math.random() < 0.5 ? 1 : -1 });
+  }
+
+  /** One popup for everything paid at this stop. */
+  private flushPayout(r: Run): void {
+    const p = r.payout;
+    if (!p) return;
+    r.payout = null;
+    const what = [p.count > 1 ? `${p.count} fares` : '', r.streak > 0 ? `streak ×${streakMult(r.streak)}` : '', ...p.notes].filter(Boolean).join(' · ');
+    if (p.first) this.hud.popup(`First fare! +${money(p.amount)}`, what || 'pick up, drop off, get paid', 'gold');
+    else this.hud.popup(`+${money(p.amount)}`, what);
   }
 
   private changeTimeout(r: Run): void {
@@ -1634,13 +1756,15 @@ export class Game {
     const missed = r.riders.filter((rd) => rd.destSerial === st.serial).length;
     if (missed > 0) {
       r.riders = r.riders.filter((rd) => rd.destSerial !== st.serial);
-      this.loseStreak(`${missed} missed`);
+      r.missed += missed;
+      this.loseStreak(`${missed} passenger${missed === 1 ? '' : 's'} missed their stop`);
       this.hud.say(pick(LINES.missed), 'passenger');
       this.sound.changeBad();
     } else if (st.dropped > 0) {
       r.streak = Math.min(4, r.streak + 1);
       r.served += 1;
       this.hud.say(`Clean stop! Fares now ×${streakMult(r.streak)}`, 'info');
+      this.hud.popup(`Streak ×${streakMult(r.streak)}`, 'clean stop: fares go up', 'gold');
       this.emit('streak', streakMult(r.streak));
     } else if (st.boarded > 0) r.served += 1;
   }
@@ -1651,6 +1775,7 @@ export class Game {
     const { kind, key } = r.parked;
     r.parked = null;
     if (kind === 'stop') {
+      this.flushPayout(r);
       const st = this.stops.get(key);
       if (st) st.left = true;
       r.changeQueue = [];
@@ -1678,6 +1803,7 @@ export class Game {
       return;
     }
     this.change.show({ who: task.who, fare: task.fare, paid: task.paid, due: task.due, given: r.changeGiven, timeLeft: r.changeT, total: TUNING.changeSeconds });
+    this.tip('change', 'Give change: tap notes until they add up to the change due. Exact change earns a tip.');
   }
 
   // ---------- Rival danfos ----------
@@ -1768,7 +1894,7 @@ export class Game {
   }
 
   private maybeSpawnRival(r: Run): void {
-    if (r.t < 20 || r.rivalWait < 2) return;
+    if (r.guide || r.t < 20 || r.rivalWait < 2) return;
     const st = this.nextStop();
     if (!st || st.called || st.waiting.length < 2 || st.key === r.rivalChecked) return;
     const ahead = st.at - this.dist;
@@ -1791,6 +1917,7 @@ export class Game {
     r.rivalWait = 0;
     r.rivalsMet += 1;
     this.hud.say(pick(RIVAL_CALLS)(name, st.name), 'conductor');
+    this.tip('rival', `Rival danfo! Park in the ${st.name} bay before ${name} does, or it takes your passengers.`);
   }
 
   private rivalBeaten(r: Run, rv: Rival, line: string): void {
@@ -1821,7 +1948,7 @@ export class Game {
     for (const s of this.stations.values()) if (!s.done && (!sn || s.at < sn.at)) sn = s;
     if (!sn) return;
     const rel = this.dist - sn.at;
-    const inZone = rel > -TUNING.zoneBefore && rel < TUNING.zoneAfter;
+    const inZone = rel > -(TUNING.zoneBefore + TUNING.shortStop) && rel < TUNING.zoneAfter;
     if (!r.parked && !sn.left && inZone && this.atKerb() && this.speed < TUNING.parkBelow && !this.air && r.fuel < r.tank - 0.5) {
       r.parked = { kind: 'station', key: sn.key, leaveT: 0 };
       this.speed = 0;
@@ -1859,14 +1986,16 @@ export class Game {
       const ahead = j.at - front;
       if (!j.active && ahead < 300) {
         j.active = true;
-        j.phase = Math.random() < 0.65 ? 'stop' : 'go';
+        // While guiding, the warden waves everyone through.
+        j.phase = this.guiding(r) ? 'go' : Math.random() < 0.65 ? 'stop' : 'go';
+        if (j.phase === 'stop') this.tip('warden', 'Warden has his hand up: stop before the white line until he waves, or pay ₦500.');
         j.timer = j.phase === 'stop' ? rand(4, 6) : rand(4, 7);
         if (j.phase === 'stop') this.hud.say(pick(LINES.wardenStop), 'info');
       }
       if (!j.active) continue;
       j.timer -= dt;
       if (j.timer <= 0) {
-        j.phase = j.phase === 'stop' ? 'go' : 'stop';
+        j.phase = j.phase === 'stop' || this.guiding(r) ? 'go' : 'stop';
         j.timer = j.phase === 'stop' ? rand(4, 6) : rand(7, 10);
         if (j.phase === 'go' && ahead > -2 && ahead < 120) this.hud.say(pick(LINES.wardenGo), 'info');
       }
@@ -1886,7 +2015,7 @@ export class Game {
           this.earn(r, -TUNING.wardenFine);
           this.loseStreak('Warden fine');
           this.hud.say(pick(LINES.wardenFine), 'info');
-          this.hud.popup(`−${money(TUNING.wardenFine)}`, 'warden fine', 'bad');
+          this.hud.popup(`−${money(TUNING.wardenFine)}`, 'Warden fine: you crossed his line', 'bad');
           this.sound.whistle();
         } else if (j.waited) {
           this.emit('wardenObey', 1);
@@ -1917,6 +2046,7 @@ export class Game {
           r.fines += TUNING.toll * 5;
           this.earn(r, -TUNING.toll * 5);
           this.hud.say(pick(LINES.tollCrash), 'info');
+          this.hud.popup(`−${money(TUNING.toll * 5)}`, 'Toll gate: slow below 20 km/h to pay', 'bad');
           this.crash();
         }
       }
@@ -1938,7 +2068,7 @@ export class Game {
         this.earn(r, -TUNING.brtFine);
         this.loseStreak('BRT fine');
         this.hud.say(pick(LINES.brtFine), 'info');
-        this.hud.popup(`−${money(TUNING.brtFine)}`, 'BRT camera', 'bad');
+        this.hud.popup(`−${money(TUNING.brtFine)}`, 'BRT camera: buses only in the red lane', 'bad');
         if (!this.reduceMotion) this.hud.flash();
         this.sound.snap();
       }
@@ -1946,6 +2076,7 @@ export class Game {
   }
 
   private updateBrt(dt: number, r: Run): void {
+    if (stretchAt(this.route, this.dist - this.runStart).brt) this.tip('brt', 'The red lane is for BRT buses. It is quick, but cameras fine you ₦1,500.');
     if (this.inBrtLane()) {
       r.brtT += dt;
       if (r.brtT > 1.5 && !this.traffic.vehicles.some((v) => v.behind && !v.flung)) {
@@ -2029,16 +2160,22 @@ export class Game {
     const r = this.run;
     if (hit) this.traffic.fling(hit, this.x);
     if (!r || r.invuln > 0) return;
-    r.body -= 1;
+    // While learning, crashes slow the bus but do not cost bodywork.
+    const learning = this.guiding(r);
+    if (!learning) r.body -= 1;
+    r.crashes += 1;
     r.invuln = 2.2;
     this.speed *= 0.25;
     this.shake = 0.7;
     r.cleanMetres = 0;
+    if (!this.reduceMotion) this.hud.hurt();
+    this.hud.popup(learning ? 'Crash!' : 'Crash! −1 bodywork', learning ? 'no damage while you learn' : r.body === 1 ? 'one more and you are out' : '', 'bad');
     for (const rd of r.riders) rd.smooth = false;
     if (r.riders.some((rd) => rd.kind === 'preacher') && !r.shieldUsed) {
       r.shieldUsed = true;
       this.hud.say(pick(LINES.preacher), 'passenger');
-    } else this.loseStreak('Streak lost');
+      if (r.streak > 0) this.hud.popup('Streak saved', 'the preacher covered this crash', 'gold');
+    } else this.loseStreak('crash');
     this.sound.crash();
     this.hud.say(pick(LINES.crash), 'passenger');
     if (r.body <= 0) this.endRun('crash');
@@ -2094,11 +2231,13 @@ export class Game {
       vis.group.visible = true;
       if (!vis.group.parent) this.stage.scene.add(vis.group);
       const raining = (this.run?.rain ?? 0) > 0.4;
-      const count = clamp(Math.round(def.busy * rand(0.5, 1.15) * this.event.crowdMult * (raining ? 1.5 : 1)), 1, 9);
+      // The guided run always has a few ordinary passengers waiting.
+      const guiding = this.run !== null && this.guiding(this.run);
+      const count = Math.max(guiding ? 3 : 1, clamp(Math.round(def.busy * rand(0.5, 1.15) * this.event.crowdMult * (raining ? 1.5 : 1)), 1, 9));
       const weights = this.paxWeights(stretchAt(route, def.at).kind);
       const waiting: Waiting[] = [];
       for (let i = 0; i < count; i++) {
-        const kind = weighted(weights);
+        const kind: PaxKind = guiding ? 'regular' : weighted(weights);
         const mesh = this.figure(kind);
         mesh.position.set(KERB_X + rand(0.9, 2.7), 0.15, rand(-5.5, 5.5));
         mesh.rotation.y = rand(-0.5, 0.5);
@@ -2232,7 +2371,7 @@ export class Game {
     return {
       dist: this.dist,
       difficulty: race ? 0.35 : r ? clamp((this.dist - r.startDist) / 7000, 0, 1) : 0,
-      trafficMult: race ? 1 : this.event.trafficMult,
+      trafficMult: race ? 1 : r && this.guiding(r) ? 0.55 : this.event.trafficMult,
       pedestrianMult: this.event.pedestrianMult,
       hawkerMult: this.event.hawkerMult,
       rain: r?.rain ?? 0,
@@ -2307,7 +2446,7 @@ export class Game {
 
   private hudData(r: Run) {
     const st = this.nextStop();
-    let stop: { name: string; dist: string; info: string; hint: string; busy: boolean; here: boolean } | null = null;
+    let stop: { name: string; dist: string; info: string; hint: string; busy: boolean; here: boolean; cue: 'go' | 'now' | 'late' | null } | null = null;
     const touch = document.body.classList.contains('touch');
     const brakeWord = touch ? 'Hold BRAKE' : 'Hold ↓';
     if (st) {
@@ -2317,11 +2456,17 @@ export class Game {
       const busy = drops > 0 || boardable;
       const free = r.seats - this.seatsUsed(r);
       let hint = '';
+      let cue: 'go' | 'now' | 'late' | null = null;
       const parkedHere = r.parked?.kind === 'stop' && r.parked.key === st.key;
       if (parkedHere) hint = this.change.visible ? 'Give the right change!' : `Passengers moving… ${touch ? 'GO' : 'Space'} to leave early`;
       else if (st.left) hint = 'Drive on';
       else if (!busy) hint = ahead < 220 ? (st.waiting.length > 0 ? 'Bus full. Drive on.' : 'Nobody for this stop. Drive on.') : '';
-      else if (ahead < 220) hint = this.lane !== KERB ? 'Move to the kerb lane →' : `${brakeWord} in the yellow bay`;
+      else if (ahead < 220 && this.lane !== KERB) hint = 'Move to the kerb lane →';
+      else if (ahead < 220) {
+        const c = this.brakeCue(r, st);
+        cue = c.tone;
+        hint = c.tone === 'go' ? `${c.text} · ${brakeWord.toLowerCase()} for the yellow bay` : c.text;
+      }
       stop = {
         name: st.name,
         dist: here ? 'Here' : ahead > TUNING.zoneBefore ? `in ${Math.round(ahead - TUNING.zoneBefore)} m` : '',
@@ -2329,6 +2474,7 @@ export class Game {
         hint,
         busy,
         here: here && busy,
+        cue,
       };
     }
     const alerts: { id: string; text: string; tone: AlertTone }[] = [];

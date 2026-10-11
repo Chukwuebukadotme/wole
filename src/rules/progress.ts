@@ -39,6 +39,10 @@ export interface SaveData {
   settings: { autoChange: boolean; muted: boolean };
   route: RouteId;
   seenHelp: boolean;
+  /** The guided first pickup and drop-off is finished. */
+  guided: boolean;
+  /** One-time tips already shown, by id. */
+  tips: string[];
 }
 
 export function defaultSave(): SaveData {
@@ -58,6 +62,8 @@ export function defaultSave(): SaveData {
     settings: { autoChange: false, muted: false },
     route: 'ikorodu',
     seenHelp: false,
+    guided: false,
+    tips: [],
   };
 }
 
@@ -137,6 +143,9 @@ export function parseSave(raw: unknown): SaveData {
     settings: { autoChange: bool(settings.autoChange, false), muted: bool(settings.muted, false) },
     route: ROUTES.some((r) => r.id === route) ? (route as RouteId) : 'ikorodu',
     seenHelp: bool(raw.seenHelp, false),
+    // Players who already drove before the guide existed skip it.
+    guided: bool(raw.guided, num(stats.runs, 0) > 0),
+    tips: Array.isArray(raw.tips) ? raw.tips.filter((t): t is string => typeof t === 'string').slice(0, 64) : [],
   };
 }
 

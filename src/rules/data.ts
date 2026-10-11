@@ -24,6 +24,8 @@ export const TUNING = {
   gravity: 24,
   zoneBefore: 14,
   zoneAfter: 16,
+  /** Metres short of a bay that still count as stopping in it. */
+  shortStop: 10,
   baseSeats: 12,
   baseBody: 3,
   baseTank: 40,
