@@ -1,72 +1,42 @@
-# Wole Wole
+# West Road Life
 
-A 3D Lagos danfo driving game for the browser. Load passengers at real Lagos bus stops, drop each one at their stop, hand back the right change, stop when the traffic warden raises his hand, and keep your fare streak alive from the morning rush to owambe night.
+A three-lane arcade driving game set in **London** and **Lagos**, built with Three.js and TypeScript. Drive a red double-decker over Tower Bridge or a yellow danfo along the Lagos Marina, dodge traffic, pick up passengers if you like, and earn pounds or naira for every metre. Then share your result and challenge a friend to drive the same road and beat it.
 
-Built with TypeScript, Three.js and Vite. The city, people and sound are made in code; cars and trucks are free low-poly models. The whole game ships as one small static site.
+Play: https://wole-phi.vercel.app
 
-## What's in the game
+## The game
 
-- **Guided first shift:** a new player's first run walks through one pickup and one drop-off step by step (kerb lane, brake in the bay, drop at the next stop) in clear daylight. Fuel, wardens, change and rivals switch on after the first fare, each with a one-time tip the first time it comes up.
-- **Clear feedback:** the stop card counts down to the moment to brake ("Brake in 40 m", "BRAKE NOW", "Too fast!"), stopping a little short of the bay still counts, and crashes, fines, streak changes and passenger bonuses each get a visible reaction.
-- **Daily shift and challenges:** one lap of the day's route in a standard danfo, with the same traffic layout, passengers, wardens, rivals and weather for everyone that day. Share your result as a picture card (phone share sheet, or WhatsApp / copy link / save image) with a link that challenges friends to beat your take-home.
-- **Useful results:** take-home first, then deliveries, missed stops, crashes and fines, how you did against your best or a friend's challenge, a driver title and one tip for next time.
-- **Three routes:** Ikorodu Road (Mile 12 → Fadeyi, with a BRT corridor), Third Mainland (Ebute Metta → CMS over the lagoon bridge, unlocks at level 3) and Lekki Express (Lekki Phase 1 → Ajah with a toll gate, unlocks at level 6).
-- **Street races:** four races on stretches of the routes (Ikorodu Road Sprint, Third Mainland Night Dash, Lekki Big Boys Run and the Eko Night Grand Prix). Line up against four named drivers, weave through normal traffic and finish in the top three for prize money. Each race lays its traffic out the same way every time, so you can learn it and beat your best time.
-- **A proper danfo:** a van-shaped bus with raked windscreen, side windows, mirrors, hubcaps and black stripes; it dips under braking, squats when you floor it and bounces over potholes and as passengers board. Every vehicle sits on a soft shadow.
-- **Cars to race:** nine cars alongside your danfo, from the Tokunbo Saloon and Yaba Hot Hatch to SUVs, luxury cars, electric cars and two exotics. Each has its own top speed, pick-up, handling and toughness; electric cars whine instead of growl. For now every car and every race is open from the start (switches `ALL_CARS_FREE` and `ALL_RACES_OPEN`); prices and levels stay in the data for earnings-based unlocks later. Passenger runs stay in the danfo.
-- **Busy roads:** saloons, yellow taxis, vans, pickups, jeeps, box trucks and refuse trucks, with luxury SUVs, sports coupés, electric cars and the odd race car showing up more on posh roads like Lekki.
-- **Living Lagos:** an in-game clock from dawn to night (streetlights, lit windows, headlights), harmattan haze in season, rain showers with slippery brakes, market stretches with stalls, people crossing and hawkers on the lane lines, and Independence Day bunting on 1 October.
-- **Passengers with personalities:** market women whose basins take two seats, students, office workers who tip if you are on time, preachers who protect your streak, Baba who doubles his fare for a smooth ride, hawkers who sell to your passengers, and owambe guests at night.
-- **Rival danfos:** now and then another danfo (with its driver's name above it) races you to the next stop. Park in the bay first to keep the passengers and earn a bonus; let it load first and it carries them off.
-- **Conductor and money:** give exact change from ₦50–₦500 notes for tips, buy fuel at filling stations, pay the Lekki toll, avoid warden and BRT camera fines.
-- **Progression:** missions, levels, a daily bonus, weekday events (Church Sunday, Monday Rush, Harmattan Tuesday, Market Wednesday, Fuel Queue Thursday, Owambe Friday, Rainy Saturday), and a garage with cars, paint jobs, rear stickers, horns and upgrades. Danfo fares and race prizes go into the same bank. Progress is saved in the browser.
+- **Two cities, six areas.** London: River Run (over Tower Bridge to the South Bank), Wapping Streets (warehouses and quays), Bridge Approach (Bermondsey to Whitechapel). Lagos: Marina City Drive (the cathedral, Broad Street and Balogun Market), Ikeja Avenue Drive (Allen Avenue and Computer Village), Victoria Island Drive (glass towers, palms and the lagoon).
+- **Route or Endless.** Route ends at the last stop; Endless keeps going, a little faster and busier each kilometre, until the damage limit.
+- **Passengers on or off.** Either way you earn by driving (faster pays more). With passengers on, move into the marked bay at a stop and brake: riders get off and pay, new ones get on. Stop by the shelter for a perfect-stop tip. London pickups are at the left kerb, Lagos at the right.
+- **Six vehicles per city.** London: red double-decker, black cab, teal hatchback, coral sedan, navy SUV, motorcycle. Lagos: yellow danfo, coral sedan, Lagos taxi, keke, navy SUV, okada. Each has its own seats, fares, speed, handling and health. All are free.
+- **Feedback that reads at a glance:** close-pass and clean-kilometre bonuses, health marks with a damage warning that names what you hit, a Lagos conductor (or London bus announcement) calling the next stop.
+- **Social:** a result card with a picture of your drive, shared through the phone's share sheet (or saved / copied). The link carries the same city, area, vehicle and traffic seed, so a friend drives the same road. A **daily drive** gives everyone the same city, vehicle and road each day.
+- **First drive** teaches swipe, speed up and stopping one step at a time. Reduced-motion and volume settings are in Settings.
 
-## Controls
+Controls: swipe left/right to change lane, hold the road or Gas to speed up, hold Brake. Keys: ← → lanes, ↑/W gas, ↓/S/Space brake, P pause, M sound.
 
-| Action | Keyboard | Touch |
-| --- | --- | --- |
-| Change lane | ← → or A D | Swipe left or right |
-| Speed up (eases back when released; in a race, full speed of your car) | Hold ↑ or W | Hold GAS |
-| Brake (and stop at a bay) | Hold ↓, S or Shift | Hold BRAKE |
-| Hop over barriers | Space | Swipe up or HOP |
-| Leave a stop early | Space, ↑ or W | GO or GAS |
-| Horn (moves okadas and kekes) | H | HORN |
-| Give change | 1–4, Backspace to undo | Tap the notes |
-| Pause, mute | P or Esc, M | Pause, Sound |
+## Art direction
 
-## Develop
+The look follows the *West Road Life* visual kit (London and Lagos boards, fleets, environment sheets, Three.js spec): rounded cartoon forms, deep navy glass, cream hubs, ink/cream/yellow UI in Exo 2. There are no imported 3D models: every vehicle, building, person and landmark is built in code from rounded parts (`src/art/`), merged per model and drawn with instancing, so the whole game is a few hundred kilobytes. Lagos keeps Wole Wole's street life (market umbrellas, hand-painted signs, hawkers, black-and-white kerbs, water tanks, danfo stripes) on top of the kit's three districts.
 
-Requires Node.js 20.19 or newer.
-
-```bash
-npm ci
-npm run dev        # local dev server
-npm test           # rules unit tests (fares, change, saves, missions, routes, daily events, traffic mix, races, daily shift)
-npm run check      # type-check + tests + production build
-```
-
-Append `?debug` to the URL to expose the running game as `window.__wole` for automated play tests.
-
-## Deploy to Vercel
-
-1. Push this repository to GitHub.
-2. In Vercel, choose **Add New → Project** and import the repository.
-3. Vercel detects Vite from `vercel.json`: build command `npm run build`, output directory `dist`. Click **Deploy**.
-
-Or from a terminal: `npx vercel` (preview) and `npx vercel --prod` (production).
-
-## Project layout
+## Code
 
 ```
-src/rules/   Pure game rules and data: routes, passengers, fares, change, saves, missions, daily events (unit tested)
-src/engine/  Three.js: renderer, sky and weather, world tiles, models, car models, textures, route features
-src/assets/  Car and truck models (glTF)
-src/game/    Game loop, traffic simulation, AI racers, races, stops, stations, warden junctions, toll, BRT, collisions
-src/ui/      HUD, change panel and screens
+src/config/   cities, areas, stops and vehicles
+src/rules/    money, saves (with Wole Wole migration), daily drive, challenge links, advice — unit tested
+src/art/      rounded-part kit, vehicles, people, buildings, props, landmarks, textures
+src/world/    renderer and sky, road layout, street streaming, instanced pools
+src/game/     the drive, traffic, crowd, player vehicle, camera
+src/ui/       HUD, screens, share card
+src/app.ts    screens, showcase, drives, results and sharing
 ```
 
-## Credits
+```
+npm install
+npm run dev        # http://localhost:5173 (?gallery and ?street open model and street views)
+npm test           # rules unit tests
+npm run check      # types, tests and production build
+```
 
-An original game inspired by everyday Lagos transport. Stop names are real places; distances, businesses, brands, car names and dialogue are invented. Not affiliated with any other game.
-
-Car and truck models: [Car Kit](https://kenney.nl/assets/car-kit) by Kenney, CC0 (see `src/assets/cars/LICENSE-kenney.txt`).
+Fonts: Exo 2 (SIL Open Font License, `public/fonts/OFL.txt`).

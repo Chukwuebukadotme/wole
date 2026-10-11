@@ -29,11 +29,6 @@ export function weighted<T>(entries: ReadonlyArray<readonly [T, number]>, rng: R
   return last[0];
 }
 
-/** Naira amounts are kept in ₦50 steps so change can always be made. */
-export const round50 = (amount: number): number => Math.max(50, Math.round(amount / 50) * 50);
-export const money = (amount: number): string => `₦${Math.round(amount).toLocaleString('en-NG')}`;
-export const metres = (m: number): string => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`);
-
 /** Small seeded generator for repeatable layouts. */
 export function mulberry32(seed: number): Rng {
   let t = seed >>> 0;
@@ -43,11 +38,4 @@ export function mulberry32(seed: number): Rng {
     r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-/** Clock text for a game hour such as 18.25 → "18:15". */
-export function clockText(hour: number): string {
-  const h = Math.floor(mod(hour, 24));
-  const m = Math.floor((mod(hour, 24) - h) * 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }

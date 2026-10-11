@@ -1,305 +1,161 @@
-import { PAX, type PaxKind } from '../rules/data.ts';
-import { byId, TextCache } from './dom.ts';
-import { paxIcon } from './icons.ts';
+// In-drive overlay: money, place and health, passengers or distance, message cards, countdown and controls.
+import type { Card, TutorialStep } from '../game/drive.ts';
+import { byId, esc, TextCache } from './dom.ts';
 
-export type CalloutKind = 'conductor' | 'passenger' | 'info' | 'mission';
-export type AlertTone = 'ok' | 'warn' | 'bad' | 'info';
-
-export interface HudData {
-  readonly cash: number;
-  readonly cashText: string;
-  readonly streak: number;
-  readonly multText: string;
-  readonly distText: string;
-  readonly clock: string;
-  readonly skyText: string;
-  readonly fuel: number;
-  readonly fuelLow: boolean;
-  readonly body: number;
-  readonly bodyMax: number;
-  readonly seatsText: string;
-  readonly riders: readonly PaxKind[];
-  readonly speedKmh: number;
-  /** `cue` says how urgent braking is: plenty of room, brake now, or already too fast to stop in the bay. */
-  readonly stop: { name: string; dist: string; info: string; hint: string; busy: boolean; here: boolean; cue: 'go' | 'now' | 'late' | null } | null;
-  readonly alerts: readonly { id: string; text: string; tone: AlertTone }[];
-  readonly parked: boolean;
-}
-
-export interface RaceHudData {
+export interface HudState {
+  readonly money: string;
   readonly place: string;
-  readonly of: string;
-  readonly time: string;
-  readonly togo: string;
-  readonly body: number;
-  readonly bodyMax: number;
-  readonly speedKmh: number;
-  /** Everyone's progress from start (0) to finish (1). */
-  readonly track: readonly { pct: number; color: string; you: boolean }[];
+  readonly health: number;
+  readonly healthMax: number;
+  readonly passengers: boolean;
+  readonly onboard: number;
+  readonly seats: number;
+  readonly next: string;
+  /** "DISTANCE 2.4 km" or "TO FINISH 1.2 km". */
+  readonly distance: string;
+  readonly gasHeld: boolean;
+  /** Boarding progress 0–1, or null when not stopped. */
+  readonly progress: number | null;
+  /** Countdown number, or null. */
+  readonly count: number | null;
+  readonly countText: string;
+  readonly step: TutorialStep | null;
+  readonly target: string | null;
 }
 
 export class Hud {
   private readonly root = byId('hud');
-  private readonly text = new TextCache();
   private readonly el = {
-    cash: byId('h-cash'),
-    mult: byId('h-mult'),
-    dist: byId('h-dist'),
-    clock: byId('h-clock'),
-    sky: byId('h-sky'),
-    fuel: byId('h-fuel'),
-    fuelChip: byId('h-fuel-chip'),
-    body: byId('h-body'),
-    seats: byId('h-seats'),
-    riders: byId('h-riders'),
-    speed: byId('h-speed'),
+    money: byId('h-money'),
+    place: byId('h-place'),
+    health: byId('h-health'),
+    info: byId('h-info'),
+    target: byId('h-target'),
+    step: byId('h-step'),
     card: byId('h-card'),
-    stopName: byId('h-stop-name'),
-    stopDist: byId('h-stop-dist'),
-    stopInfo: byId('h-stop-info'),
-    stopHint: byId('h-stop-hint'),
-    alerts: byId('h-alerts'),
-    callout: byId('h-callout'),
-    popups: byId('popups'),
-    flash: byId('flash'),
-    hop: byId('b-hop'),
-    pos: byId('h-pos'),
-    of: byId('h-of'),
-    time: byId('h-time'),
-    togo: byId('h-togo'),
-    track: byId('h-track'),
-    countdown: byId('countdown'),
-    coach: byId('h-coach'),
+    cardTitle: byId('h-card-title'),
+    cardLine: byId('h-card-line'),
+    shout: byId('h-shout'),
+    pops: byId('h-pops'),
+    swipe: byId('h-swipe'),
+    count: byId('h-count'),
+    countNum: byId('h-count-num'),
+    countText: byId('h-count-text'),
+    progress: byId('h-progress'),
+    progressBar: byId('h-progress-bar'),
+    hint: byId('h-hint'),
+    gas: byId('b-gas'),
     hurt: byId('hurt'),
   };
-  private readonly moneyChip = this.el.cash.closest<HTMLElement>('.chip') ?? this.el.cash;
-  private marks: HTMLElement[] = [];
-  /** Guide text that stays up, and a one-time tip that times out. */
-  private coachText: string | null = null;
-  private tipText = '';
-  private tipT = 0;
-  private lastCash = 0;
-  private lastStreak = 0;
-  private lastBody = -1;
-  private readonly pops: { main: string; sub: string; tone: 'good' | 'bad' | 'gold' }[] = [];
-  private popT = 0;
-  private readonly queue: { text: string; kind: CalloutKind }[] = [];
-  private calloutT = 0;
-  private bodyKey = '';
-  private ridersKey = '';
-  private alertsKey = '';
+  private readonly text = new TextCache();
+  private cardT = 0;
+  private shoutT = 0;
+  private healthKey = '';
+  private infoKey = '';
+  private lastMoney = '';
 
   show(on: boolean): void {
     this.root.hidden = !on;
-    if (on) {
-      this.text.clear();
-      this.bodyKey = this.ridersKey = this.alertsKey = '';
-      this.marks = [];
-      this.el.track.replaceChildren();
-      this.lastCash = 0;
-      this.lastStreak = 0;
-      this.lastBody = -1;
-    } else {
-      this.queue.length = 0;
-      this.pops.length = 0;
-      this.el.callout.className = 'callout';
-      this.coachText = null;
-      this.tipT = 0;
-      this.el.coach.hidden = true;
+    if (!on) {
+      this.el.card.hidden = true;
+      this.el.shout.hidden = true;
+      this.el.pops.replaceChildren();
+      this.cardT = 0;
     }
   }
 
-  /** Steady guide text (null clears it). */
-  coach(text: string | null): void {
-    this.coachText = text;
+  get visible(): boolean {
+    return !this.root.hidden;
   }
 
-  /** A short tip that shows for a few seconds unless the guide is talking. */
-  tip(text: string, seconds = 5): void {
-    this.tipText = text;
-    this.tipT = seconds;
+  card(card: Card, seconds: number): void {
+    this.el.card.hidden = false;
+    this.el.card.className = `card ${card.tone}`;
+    this.text.set(this.el.cardTitle, card.title);
+    this.text.set(this.el.cardLine, card.line);
+    // Restart the pop-in animation.
+    this.el.card.style.animation = 'none';
+    void this.el.card.offsetWidth;
+    this.el.card.style.animation = '';
+    this.cardT = seconds;
   }
 
-  /** Red edge flash when the vehicle takes damage. */
-  hurt(): void {
-    this.restart(this.el.hurt, 'on');
+  clearCard(): void {
+    this.cardT = 0;
+    this.el.card.hidden = true;
   }
 
-  /** Replay a one-shot CSS animation. */
-  private restart(el: HTMLElement, cls: string): void {
-    el.classList.remove(cls);
-    void el.offsetWidth;
-    el.classList.add(cls);
-  }
-
-  /** Switch between the danfo run read-outs and the race read-outs. */
-  racing(on: boolean): void {
-    this.root.classList.toggle('racing', on);
-    if (on) this.el.card.hidden = true;
-    this.el.alerts.replaceChildren();
-    this.alertsKey = '';
-    this.el.countdown.className = '';
-  }
-
-  /** Big centred countdown text: "3", "2", "1", "GO!". */
-  countdown(text: string): void {
-    this.el.countdown.textContent = text;
-    this.el.countdown.className = '';
-    void this.el.countdown.offsetWidth;
-    this.el.countdown.className = text === 'GO!' ? 'on go' : 'on';
-  }
-
-  say(text: string, kind: CalloutKind = 'conductor'): void {
-    this.queue.push({ text, kind });
-    if (this.queue.length > 3) this.queue.shift();
-  }
-
-  /** Queue a rising message; they show one after another so they never pile up. */
-  popup(main: string, sub = '', tone: 'good' | 'bad' | 'gold' = 'good'): void {
-    this.pops.push({ main, sub, tone });
-    if (this.pops.length > 4) this.pops.shift();
-  }
-
-  private showPop({ main, sub, tone }: { main: string; sub: string; tone: 'good' | 'bad' | 'gold' }): void {
+  pop(text: string, tone: 'good' | 'bad'): void {
     const el = document.createElement('div');
-    el.className = `pop ${tone}`;
-    const b = document.createElement('b');
-    b.textContent = main;
-    el.appendChild(b);
-    if (sub) {
-      const s = document.createElement('small');
-      s.textContent = sub;
-      el.appendChild(s);
-    }
-    this.el.popups.appendChild(el);
-    window.setTimeout(() => el.remove(), 1200);
+    el.className = `popup disp ${tone === 'bad' ? 'bad' : ''}`;
+    el.textContent = text;
+    el.addEventListener('animationend', () => el.remove());
+    this.el.pops.append(el);
+    while (this.el.pops.children.length > 3) this.el.pops.firstElementChild?.remove();
   }
 
-  flash(): void {
-    this.el.flash.classList.remove('on');
-    void this.el.flash.offsetWidth;
-    this.el.flash.classList.add('on');
+  /** A conductor's shout or a bus announcement, in a speech bubble. */
+  shout(text: string): void {
+    this.el.shout.hidden = false;
+    this.el.shout.textContent = text;
+    this.shoutT = 2.8;
+  }
+
+  hurt(): void {
+    this.el.hurt.classList.add('on');
+    window.setTimeout(() => this.el.hurt.classList.remove('on'), 120);
+    this.el.health.classList.remove('hit');
+    void this.el.health.offsetWidth;
+    this.el.health.classList.add('hit');
   }
 
   tick(dt: number): void {
-    this.popT -= dt;
-    const pop = this.popT <= 0 ? this.pops.shift() : undefined;
-    if (pop) {
-      this.showPop(pop);
-      this.popT = 0.5;
+    if (this.cardT > 0) {
+      this.cardT -= dt;
+      if (this.cardT <= 0) this.el.card.hidden = true;
     }
-    this.tipT = Math.max(0, this.tipT - dt);
-    const coach = this.coachText ?? (this.tipT > 0 ? this.tipText : null);
-    this.el.coach.hidden = !coach;
-    if (coach) this.text.set(this.el.coach, coach);
-    this.calloutT -= dt;
-    if (this.calloutT > 0) return;
-    const next = this.queue.shift();
-    if (next) {
-      this.el.callout.textContent = next.text;
-      this.el.callout.className = `callout show ${next.kind}`;
-      this.calloutT = 2.4;
-    } else this.el.callout.className = 'callout';
+    if (this.shoutT > 0) {
+      this.shoutT -= dt;
+      if (this.shoutT <= 0) this.el.shout.hidden = true;
+    }
   }
 
-  update(d: HudData): void {
+  render(s: HudState): void {
     const t = this.text;
-    t.set(this.el.cash, d.cashText);
-    t.set(this.el.mult, d.multText);
-    this.el.mult.classList.toggle('hot', d.streak > 0);
-    // Money and streak react when they change, so gains and losses register at a glance.
-    if (d.cash > this.lastCash + 0.5) this.restart(this.moneyChip, 'gain');
-    else if (d.cash < this.lastCash - 0.5) this.restart(this.moneyChip, 'loss');
-    this.lastCash = d.cash;
-    if (d.streak > this.lastStreak) this.restart(this.el.mult, 'up');
-    else if (d.streak < this.lastStreak) this.restart(this.el.mult, 'down');
-    this.lastStreak = d.streak;
-    t.set(this.el.dist, d.distText);
-    t.set(this.el.clock, d.clock);
-    t.set(this.el.sky, d.skyText);
-    t.set(this.el.seats, d.seatsText);
-    t.set(this.el.speed, String(Math.round(d.speedKmh)));
-    t.set(this.el.hop, d.parked ? 'Go' : 'Hop');
-    this.el.hop.classList.toggle('go', d.parked);
-    this.el.fuel.style.transform = `scaleX(${Math.max(0, Math.min(1, d.fuel)).toFixed(3)})`;
-    this.el.fuelChip.classList.toggle('low', d.fuelLow);
-    this.bodywork(d.body, d.bodyMax);
-    const ridersKey = d.riders.join(',');
-    if (ridersKey !== this.ridersKey) {
-      this.ridersKey = ridersKey;
-      this.el.riders.replaceChildren(
-        ...d.riders.map((kind) => {
-          const icon = document.createElement('i');
-          icon.innerHTML = paxIcon(kind);
-          icon.title = PAX[kind].label;
-          if (PAX[kind].seats > 1) icon.className = 'wide';
-          return icon;
-        }),
-      );
+    t.set(this.el.money, s.money);
+    if (s.money !== this.lastMoney && this.lastMoney !== '') {
+      this.el.money.classList.remove('bump');
+      void this.el.money.offsetWidth;
+      this.el.money.classList.add('bump');
     }
-    const alertsKey = d.alerts.map((a) => `${a.id}:${a.text}:${a.tone}`).join('|');
-    if (alertsKey !== this.alertsKey) {
-      this.alertsKey = alertsKey;
-      this.el.alerts.replaceChildren(
-        ...d.alerts.map((a) => {
-          const chip = document.createElement('span');
-          chip.className = `alert ${a.tone}`;
-          chip.textContent = a.text;
-          return chip;
-        }),
-      );
+    this.lastMoney = s.money;
+    t.set(this.el.place, s.place);
+    const hk = `${s.health}/${s.healthMax}`;
+    if (hk !== this.healthKey) {
+      this.healthKey = hk;
+      this.el.health.innerHTML = Array.from({ length: s.healthMax }, (_, i) => `<i class="${i < s.health ? '' : 'lost'}"></i>`).join('');
+      this.el.health.setAttribute('aria-label', `Health ${s.health} of ${s.healthMax}`);
     }
-    this.el.card.hidden = d.stop === null;
-    if (d.stop) {
-      t.set(this.el.stopName, d.stop.name);
-      t.set(this.el.stopDist, d.stop.dist);
-      t.set(this.el.stopInfo, d.stop.info);
-      t.set(this.el.stopHint, d.stop.hint);
-      this.el.card.classList.toggle('busy', d.stop.busy);
-      this.el.card.classList.toggle('here', d.stop.here);
-      this.el.card.classList.toggle('now', d.stop.cue === 'now');
-      this.el.card.classList.toggle('late', d.stop.cue === 'late');
+    const info = s.passengers
+      ? `<div class="bar"><b>Onboard ${s.onboard}<span class="sr"> of ${s.seats}</span></b><span>Next: ${esc(s.next)}</span></div>`
+      : `<div class="chip">Passengers off</div><div class="chip">${esc(s.distance)}</div>`;
+    if (info !== this.infoKey) {
+      this.infoKey = info;
+      this.el.info.innerHTML = info;
     }
-  }
-
-  updateRace(d: RaceHudData): void {
-    const t = this.text;
-    t.set(this.el.pos, d.place);
-    t.set(this.el.of, d.of);
-    t.set(this.el.time, d.time);
-    t.set(this.el.togo, d.togo);
-    t.set(this.el.speed, String(Math.round(d.speedKmh)));
-    t.set(this.el.hop, 'Hop');
-    this.el.hop.classList.remove('go');
-    this.bodywork(d.body, d.bodyMax);
-    if (this.marks.length !== d.track.length) {
-      this.marks = d.track.map((m) => {
-        const dot = document.createElement('i');
-        dot.style.background = m.color;
-        if (m.you) dot.className = 'you';
-        return dot;
-      });
-      this.el.track.replaceChildren(...this.marks);
+    this.el.target.hidden = !s.target;
+    if (s.target) t.set(this.el.target, s.target);
+    this.el.step.hidden = !s.step;
+    if (s.step) t.set(this.el.step, `Step ${s.step.n} / ${s.step.of}`);
+    this.el.swipe.hidden = !s.step?.swipeHint;
+    this.el.count.hidden = s.count === null;
+    if (s.count !== null) {
+      t.set(this.el.countNum, String(s.count));
+      t.set(this.el.countText, s.countText);
     }
-    d.track.forEach((m, i) => {
-      const dot = this.marks[i];
-      if (dot) dot.style.left = `${(m.pct * 100).toFixed(1)}%`;
-    });
-  }
-
-  private bodywork(body: number, max: number): void {
-    if (this.lastBody >= 0 && body < this.lastBody) this.restart(this.el.body, 'hit');
-    this.lastBody = body;
-    const key = `${body}/${max}`;
-    if (key === this.bodyKey) return;
-    this.bodyKey = key;
-    this.el.body.replaceChildren(
-      ...Array.from({ length: max }, (_, i) => {
-        const pip = document.createElement('i');
-        pip.className = i < body ? 'pip on' : 'pip';
-        return pip;
-      }),
-    );
-    this.el.body.classList.toggle('low', body === 1);
+    this.el.progress.hidden = s.progress === null;
+    if (s.progress !== null) this.el.progressBar.style.width = `${Math.round(s.progress * 100)}%`;
+    t.set(this.el.gas, s.gasHeld ? 'Gas held' : 'Gas');
+    this.el.hint.style.visibility = s.progress === null ? 'visible' : 'hidden';
   }
 }

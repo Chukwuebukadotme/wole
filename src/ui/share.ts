@@ -1,34 +1,48 @@
-// Share card: a picture of the result plus a message and link, sent through the phone's share sheet.
+// Share card: a picture of the drive with the money earned, sent through the phone's share sheet.
 
 export interface ShareCard {
-  /** Small line at the top, e.g. "DAILY SHIFT · 11 OCT". */
-  readonly badge: string;
+  /** Screenshot of the drive (a data URL), or null. */
+  readonly shot: string | null;
+  readonly city: string;
+  readonly area: string;
+  readonly vehicle: string;
   readonly amount: string;
-  readonly amountLabel: string;
-  /** Light-hearted driver title. */
-  readonly driver: string;
+  readonly distance: string;
+  readonly stats: readonly string[];
   readonly name: string;
-  readonly lines: readonly (readonly [string, string])[];
-  readonly cta: string;
+  /** "Daily drive · 11 Oct", or null. */
+  readonly badge: string | null;
   readonly url: string;
 }
 
-const DISPLAY = '"Alfa Slab One", Rockwell, Georgia, serif';
-const UI = '"Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif';
+const DISPLAY = '"Exo 2", "Arial Black", sans-serif';
+const INK = '#142b4e';
+const CREAM = '#fff3d9';
+const YELLOW = '#ffd447';
+const MUTED = '#48617d';
 
-function fit(g: CanvasRenderingContext2D, text: string, maxWidth: number, size: number, family: string, weight = ''): void {
+function fit(g: CanvasRenderingContext2D, text: string, maxWidth: number, size: number, style: string): void {
   let s = size;
-  g.font = `${weight} ${s}px ${family}`.trim();
-  while (g.measureText(text).width > maxWidth && s > 12) {
+  g.font = `${style} ${s}px ${DISPLAY}`;
+  while (g.measureText(text).width > maxWidth && s > 14) {
     s -= 2;
-    g.font = `${weight} ${s}px ${family}`.trim();
+    g.font = `${style} ${s}px ${DISPLAY}`;
   }
 }
 
-/** Draw the card (1080 × 1350, the shape WhatsApp and Instagram show best). */
-export async function drawShareCard(c: ShareCard): Promise<Blob | null> {
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/** Draw the card at 1080 × 1350 (the shape social apps show best). */
+export async function drawShareCard(c: ShareCard): Promise<HTMLCanvasElement | null> {
   try {
-    await Promise.all([document.fonts.load(`80px ${DISPLAY}`), document.fonts.load(`700 40px ${UI}`)]);
+    await Promise.all([document.fonts.load(`italic 800 80px ${DISPLAY}`), document.fonts.load(`600 40px ${DISPLAY}`)]);
   } catch {
     // Fall back to whatever fonts are available.
   }
@@ -39,87 +53,96 @@ export async function drawShareCard(c: ShareCard): Promise<Blob | null> {
   canvas.height = H;
   const g = canvas.getContext('2d');
   if (!g) return null;
-  g.fillStyle = '#f6b800';
+  g.fillStyle = INK;
   g.fillRect(0, 0, W, H);
-  // The danfo's black stripes.
-  g.fillStyle = '#141414';
-  g.fillRect(0, H - 150, W, 34);
-  g.fillRect(0, H - 96, W, 18);
-  g.fillRect(0, 0, W, 18);
+  // The drive itself, filling the top.
+  const shot = c.shot ? await loadImage(c.shot) : null;
+  const photoH = 700;
+  if (shot) {
+    const scale = Math.max(W / shot.width, photoH / shot.height);
+    const sw = W / scale;
+    const sh = photoH / scale;
+    g.drawImage(shot, (shot.width - sw) / 2, (shot.height - sh) * 0.45, sw, sh, 0, 0, W, photoH);
+  }
+  const fade = g.createLinearGradient(0, 0, 0, 260);
+  fade.addColorStop(0, 'rgba(20,43,78,0.7)');
+  fade.addColorStop(1, 'rgba(20,43,78,0)');
+  g.fillStyle = fade;
+  g.fillRect(0, 0, W, 260);
   g.textAlign = 'center';
-  g.textBaseline = 'alphabetic';
-  g.fillStyle = '#141414';
-  g.font = `110px ${DISPLAY}`;
-  g.fillText('Wole Wole', W / 2, 190);
-  g.font = `700 40px ${UI}`;
-  g.fillText(c.badge.toUpperCase(), W / 2, 260);
-
-  // Amount panel.
-  g.fillStyle = '#141414';
+  g.fillStyle = CREAM;
+  g.font = `italic 800 92px ${DISPLAY}`;
+  g.fillText('WEST ROAD', W / 2, 120);
+  g.fillStyle = YELLOW;
+  g.font = `italic 800 110px ${DISPLAY}`;
+  g.fillText('LIFE', W / 2, 228);
+  if (c.badge) {
+    g.font = `600 34px ${DISPLAY}`;
+    const bw = g.measureText(c.badge.toUpperCase()).width + 48;
+    g.fillStyle = YELLOW;
+    g.beginPath();
+    g.roundRect((W - bw) / 2, 262, bw, 54, 14);
+    g.fill();
+    g.fillStyle = INK;
+    g.fillText(c.badge.toUpperCase(), W / 2, 300);
+  }
+  // Cream result card, as in the kit's share screen.
+  const top = 600;
+  g.fillStyle = INK;
   g.beginPath();
-  g.roundRect(90, 310, W - 180, 330, 36);
+  g.roundRect(54, top + 12, W - 108, H - top - 66, 48);
   g.fill();
-  g.fillStyle = '#f6b800';
-  fit(g, c.amount, W - 260, 170, DISPLAY);
-  g.fillText(c.amount, W / 2, 500);
-  g.fillStyle = '#fff8e6';
-  g.font = `700 44px ${UI}`;
-  g.fillText(c.amountLabel, W / 2, 580);
-
-  g.fillStyle = '#141414';
-  fit(g, `“${c.driver}”`, W - 160, 62, DISPLAY);
-  g.fillText(`“${c.driver}”`, W / 2, 730);
-  if (c.name) {
-    g.font = `700 40px ${UI}`;
-    g.fillText(`— ${c.name}`, W / 2, 790);
-  }
-
-  // Stat rows.
-  let y = 860;
-  g.font = `700 44px ${UI}`;
-  for (const [k, v] of c.lines.slice(0, 4)) {
-    g.textAlign = 'left';
-    g.fillText(k, 150, y);
-    g.textAlign = 'right';
-    g.fillText(v, W - 150, y);
-    g.fillStyle = 'rgba(20,20,20,0.25)';
-    g.fillRect(150, y + 18, W - 300, 3);
-    g.fillStyle = '#141414';
-    y += 64;
-  }
-  g.textAlign = 'center';
-  fit(g, c.cta, W - 160, 56, DISPLAY);
-  g.fillText(c.cta, W / 2, H - 172);
-  g.fillStyle = '#f6b800';
-  g.font = `700 30px ${UI}`;
-  g.fillStyle = '#141414';
-  g.fillText(c.url.replace(/^https?:\/\//, '').replace(/\?.*$/, ''), W / 2, H - 30);
-  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+  g.fillStyle = CREAM;
+  g.beginPath();
+  g.roundRect(54, top, W - 108, H - top - 66, 48);
+  g.fill();
+  g.fillStyle = MUTED;
+  fit(g, `${c.city} · ${c.area}`.toUpperCase(), W - 220, 40, '600');
+  g.fillText(`${c.city} · ${c.area}`.toUpperCase(), W / 2, top + 80);
+  g.fillStyle = INK;
+  fit(g, c.amount, W - 220, 150, 'italic 800');
+  g.fillText(c.amount, W / 2, top + 240);
+  g.fillStyle = MUTED;
+  g.font = `600 36px ${DISPLAY}`;
+  g.fillText(`EARNED ON ${c.distance.toUpperCase()} IN A ${c.vehicle.toUpperCase()}`, W / 2, top + 304, W - 200);
+  g.fillStyle = INK;
+  g.font = `600 34px ${DISPLAY}`;
+  g.fillText(c.stats.join('  ·  ').toUpperCase(), W / 2, top + 372, W - 200);
+  g.fillStyle = YELLOW;
+  g.beginPath();
+  g.roundRect(150, top + 418, W - 300, 92, 24);
+  g.fill();
+  g.fillStyle = INK;
+  fit(g, 'CAN YOU BEAT MY DRIVE?', W - 360, 50, 'italic 800');
+  g.fillText('CAN YOU BEAT MY DRIVE?', W / 2, top + 482);
+  g.fillStyle = MUTED;
+  g.font = `600 32px ${DISPLAY}`;
+  const from = c.name ? `${c.name.toUpperCase()} · ` : '';
+  g.fillText(`${from}${c.url.replace(/^https?:\/\//, '').replace(/\?.*$/, '')}`, W / 2, top + 568, W - 200);
+  return canvas;
 }
+
+export const canvasBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> => new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
 
 /**
- * Share the card through the system share sheet when the browser supports it.
- * Returns false when there is no share sheet, so the caller can show its own options.
+ * Share through the system share sheet when available.
+ * Returns 'shared', 'cancelled', or 'unavailable' so the caller can offer saving or copying instead.
  */
-export async function shareNative(card: Blob | null, text: string, url: string): Promise<boolean> {
+export async function shareNative(card: Blob | null, text: string, url: string): Promise<'shared' | 'cancelled' | 'unavailable'> {
   const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+  if (!nav.share) return 'unavailable';
   try {
-    if (card && nav.share && nav.canShare) {
-      const file = new File([card], 'wole-wole.png', { type: 'image/png' });
+    if (card && nav.canShare) {
+      const file = new File([card], 'west-road-life.png', { type: 'image/png' });
       if (nav.canShare({ files: [file] })) {
         await nav.share({ files: [file], text: `${text} ${url}` });
-        return true;
+        return 'shared';
       }
     }
-    if (nav.share) {
-      await nav.share({ text, url });
-      return true;
-    }
+    await nav.share({ text, url });
+    return 'shared';
   } catch (err) {
-    // Closing the share sheet is not an error worth showing.
-    if (err instanceof DOMException && err.name === 'AbortError') return true;
+    if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
+    return 'unavailable';
   }
-  return false;
 }
-
-export const whatsappLink = (text: string, url: string): string => `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;

@@ -3,82 +3,65 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Wole Wole</title>
-    <meta name="description" content="Drive a Lagos danfo: load passengers, give correct change, mind the traffic warden and keep your fare streak alive." />
-    <meta name="theme-color" content="#f6b800" />
-    <meta property="og:title" content="Wole Wole" />
-    <meta property="og:description" content="A Lagos danfo driving game. Oya enter!" />
+    <title>West Road Life</title>
+    <meta name="description" content="Drive London and Lagos: dodge traffic, pick up passengers, earn pounds and naira, and challenge friends to beat your drive." />
+    <meta name="theme-color" content="#142b4e" />
+    <meta property="og:title" content="West Road Life" />
+    <meta property="og:description" content="Drive a red double-decker over Tower Bridge or a yellow danfo through Lagos. Can you beat my drive?" />
+    <meta property="og:image" content="/art/london.jpg" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" />
+    <link rel="preload" href="/fonts/Exo2-ExtraBoldItalic.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="/fonts/Exo2-SemiBold.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
     <div id="app">
-      <div id="flash" aria-hidden="true"></div>
+      <div class="shade" aria-hidden="true"></div>
       <div id="hurt" aria-hidden="true"></div>
       <div id="hud" hidden>
-        <div class="bar">
-          <div class="chip money run-only">
-            <span class="lbl">Earned</span>
-            <span class="money-row"><span class="big" id="h-cash">₦0</span><span class="mult" id="h-mult" title="Fare streak multiplier">×1</span></span>
-          </div>
-          <div class="chip run-only wide-only"><span class="lbl">Distance</span><span class="mid" id="h-dist">0 m</span></div>
-          <div class="chip race-only"><span class="lbl">Position</span><span class="big"><span id="h-pos">1st</span><small id="h-of">/5</small></span></div>
-          <div class="chip race-only"><span class="lbl">Time</span><span class="mid" id="h-time">0:00.0</span></div>
-          <div class="chip race-only"><span class="lbl">To finish</span><span class="mid" id="h-togo">0 m</span></div>
-          <div class="spacer"></div>
-          <div class="chip run-only wide-only"><span class="lbl" id="h-sky">Day</span><span class="mid" id="h-clock">06:30</span></div>
-          <button type="button" class="iconbtn wide-only" id="b-mute" aria-label="Turn sound off">Sound</button>
-          <button type="button" class="iconbtn" id="b-pause" aria-label="Pause">Pause</button>
-        </div>
-        <div class="topc">
-          <div class="track race-only" id="h-track" aria-hidden="true"></div>
-          <div class="stopcard" id="h-card">
-            <div class="stoprow"><span class="lbl">Next stop</span><span id="h-stop-name"></span><span id="h-stop-dist"></span></div>
-            <div id="h-stop-info"></div>
-            <div id="h-stop-hint"></div>
-          </div>
-          <div class="coach" id="h-coach" role="status" aria-live="polite" hidden></div>
-          <div class="alerts" id="h-alerts" aria-live="polite"></div>
-          <div class="callout" id="h-callout" role="status" aria-live="polite"></div>
-        </div>
-        <div class="bottom">
-          <div class="dash">
-            <div class="gauges">
-              <div class="g seats run-only"><span class="lbl">Seats</span><span class="mid" id="h-seats">0/12</span><span class="riders" id="h-riders"></span></div>
-              <div class="g run-only" id="h-fuel-chip"><span class="lbl">Fuel</span><span class="gauge"><i id="h-fuel"></i></span></div>
-              <div class="g"><span class="lbl">Bodywork</span><span class="pips" id="h-body"></span></div>
-              <div class="g"><span class="lbl">km/h</span><span class="mid" id="h-speed">0</span></div>
+        <div class="hud-top">
+          <div class="money-panel">
+            <div>
+              <span class="lbl">Money earned</span>
+              <span class="amt disp" id="h-money">£0</span>
             </div>
-            <div class="keys"><kbd>←</kbd><kbd>→</kbd> lanes · <kbd>↑</kbd> speed up · <kbd>↓</kbd> brake · <kbd>Space</kbd> hop/go · <kbd>H</kbd> horn · <kbd>P</kbd> pause</div>
+            <button type="button" class="pause disp" id="b-pause" aria-label="Pause">II</button>
           </div>
-          <div class="pad">
-            <button type="button" id="b-horn">Horn</button>
-            <button type="button" id="b-hop">Hop</button>
-            <button type="button" id="b-brake">Brake</button>
-            <button type="button" id="b-gas">Gas</button>
+          <div class="strip">
+            <span id="h-place">London / Route</span>
+            <span class="health"><span class="lbl">Health</span><span class="marks" id="h-health"></span></span>
+          </div>
+          <div class="info" id="h-info"></div>
+          <div class="target" id="h-target" hidden></div>
+          <div class="step-tag" id="h-step" hidden></div>
+          <div class="card" id="h-card" role="status" aria-live="polite" hidden><b class="disp" id="h-card-title"></b><span id="h-card-line"></span></div>
+          <div class="shout" id="h-shout" hidden></div>
+        </div>
+        <div id="h-pops" aria-hidden="true"></div>
+        <div class="swipe-hints" id="h-swipe" hidden aria-hidden="true"><span class="disp">Left</span><span class="disp">Right</span></div>
+        <div class="countdown" id="h-count" hidden>
+          <div class="num disp" id="h-count-num">3</div>
+          <div class="pill disp" id="h-count-text">Ready to drive?</div>
+        </div>
+        <div class="hud-bottom">
+          <div class="progress" id="h-progress" hidden><i id="h-progress-bar"></i></div>
+          <div class="hint" id="h-hint">Hold road to speed up</div>
+          <div class="controls">
+            <button type="button" class="ctl brake disp" id="b-brake">Brake</button>
+            <button type="button" class="ctl gas disp" id="b-gas">Gas</button>
           </div>
         </div>
-        <div id="countdown" aria-live="assertive"></div>
       </div>
-      <div id="change" hidden>
-        <div class="ch-head"><b>Give change</b><span id="ch-who"></span></div>
-        <div class="ch-timer"><i id="ch-timer"></i></div>
-        <div class="ch-line">Fare <b id="ch-fare"></b> · Paid <b id="ch-paid"></b> · Change <b id="ch-due" class="due"></b></div>
-        <div class="ch-given" id="ch-given"></div>
-        <div class="ch-buttons" id="ch-buttons"></div>
+      <div id="screens"></div>
+      <div id="loading">
+        <div class="loading-art" id="loading-art"></div>
+        <div class="loading-body">
+          <div class="wordmark"><span class="disp w1">West Road</span><span class="disp w2">Life</span></div>
+          <p class="disp" id="loading-text">Getting ready</p>
+          <div class="bar"><i id="loading-bar"></i></div>
+          <p class="small" id="loading-pct">Loading / 0%</p>
+        </div>
       </div>
-      <div id="popups" aria-hidden="true"></div>
-      <div id="screen-title" class="screen" hidden></div>
-      <div id="screen-garage" class="screen garage" hidden></div>
-      <div id="screen-race" class="screen" hidden></div>
-      <div id="screen-missions" class="screen" hidden></div>
-      <div id="screen-help" class="screen" hidden></div>
-      <div id="screen-pause" class="screen" hidden></div>
-      <div id="screen-over" class="screen" hidden></div>
-      <div id="loading"><p>Starting the engine…</p></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

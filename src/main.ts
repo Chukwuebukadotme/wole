@@ -1,43 +1,42 @@
-import { loadCarModels } from './engine/cars.ts';
-import { Game } from './game/game.ts';
+// Entry point. ?gallery and ?street open development views; ?debug exposes the app to automated tests.
+import { App } from './app.ts';
 import { bindInput } from './input.ts';
-import { decodeChallenge } from './rules/shift.ts';
+import { decodeChallenge } from './rules/social.ts';
 
-function fail(message: string): void {
-  const el = document.getElementById('loading');
-  if (!el) return;
-  el.hidden = false;
-  el.classList.add('fail');
-  const p = el.querySelector('p');
-  if (p) p.textContent = message;
+const host = document.getElementById('app');
+const params = new URLSearchParams(window.location.search);
+
+/** The kit's recovery screen, shown when the 3D view cannot start. */
+function recovery(): void {
+  const loading = document.getElementById('loading');
+  if (loading) loading.hidden = true;
+  const screens = document.getElementById('screens');
+  if (!screens) return;
+  screens.innerHTML = `<section class="screen dim" role="alertdialog" aria-label="Could not load">
+    <div class="overlay-card">
+      <h2 class="disp">Could not load</h2>
+      <p class="muted">The city did not finish loading.<br>Close other tabs or update your browser, then retry.</p>
+      <button type="button" class="btn disp" id="retry">Retry</button>
+      <a class="linkbtn" href="./" style="color:inherit;text-align:center">Back to home</a>
+    </div>
+  </section>`;
+  document.getElementById('retry')?.addEventListener('click', () => window.location.reload());
 }
 
-try {
-  const host = document.getElementById('app');
-  if (!host) throw new Error('#app is missing from index.html');
-  const game = new Game(host);
-  game.view.tabIndex = 0;
-  bindInput(game.view, {
-    playing: () => game.playing(),
-    changeOpen: () => game.changeOpen(),
-    lane: (dir) => game.laneChange(dir),
-    hopOrGo: () => game.hopOrGo(),
-    brake: (on) => game.setBrake(on),
-    gas: (on) => game.setGas(on),
-    horn: (on) => game.horn(on),
-    pause: () => game.pauseFromInput(),
-    mute: () => game.muteFromInput(),
-    giveChange: (value) => game.giveChange(value),
-    undoChange: () => game.undoChange(),
-  });
-  game.start();
-  // A friend's daily-shift challenge arrives as ?c=… in a shared link.
-  game.setChallenge(decodeChallenge(new URLSearchParams(window.location.search).get('c')));
-  // Traffic uses simple box cars until the 3D models arrive.
-  void loadCarModels();
-  // Automated play tests read live state through ?debug; normal players never see it.
-  if (new URLSearchParams(window.location.search).has('debug')) (window as unknown as { __wole?: Game }).__wole = game;
-} catch (err) {
-  console.error(err);
-  fail('Your browser could not start the 3D graphics. Close some tabs, update your browser, or try another one.');
+// Development views are left out of production builds.
+if (host && import.meta.env.DEV && params.has('gallery')) void import('./dev/gallery.ts').then((m) => m.startGallery(host));
+else if (host && import.meta.env.DEV && params.has('street')) void import('./dev/streetview.ts').then((m) => m.startStreetView(host));
+else if (host) {
+  try {
+    const app = new App(host);
+    bindInput(app.stage.renderer.domElement, app.controls);
+    if (params.has('debug')) (window as unknown as { __wrl?: App }).__wrl = app;
+    app.boot(decodeChallenge(params.get('c'))).catch((err: unknown) => {
+      console.error(err);
+      recovery();
+    });
+  } catch (err) {
+    console.error(err);
+    recovery();
+  }
 }
