@@ -65,7 +65,7 @@ export function homeHtml(m: HomeModel): string {
     <button type="button" class="place" data-action="setup">${esc(m.place)}</button>
     <div class="extras">
       ${m.challenge ? `<div class="challenge"><p>${esc(m.challenge.text)}</p><button type="button" class="btn small disp" data-action="challenge">Beat it</button></div>` : ''}
-      ${m.daily ? `<button type="button" class="daily" data-action="daily"><span><b class="tag disp">Today’s drive</b><br>${esc(m.daily.label)}</span><span class="best">${m.daily.best ? `Best ${esc(m.daily.best)}` : 'Same road for all'}</span></button>` : ''}
+      ${m.daily && !m.challenge ? `<button type="button" class="daily" data-action="daily"><span><b class="tag disp">Today’s drive</b><br>${esc(m.daily.label)}</span><span class="best">${m.daily.best ? `Best ${esc(m.daily.best)}` : 'Same road for all'}</span></button>` : ''}
     </div>
     <div class="spacer"></div>
     <div class="panel">

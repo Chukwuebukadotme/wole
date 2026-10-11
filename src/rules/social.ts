@@ -119,6 +119,7 @@ export interface DriveStats {
 /** Two short lines of advice for the results card, most useful first. */
 export function driveAdvice(s: DriveStats): [string, string] {
   if (s.ended === 'damage') return ['Damage ended this drive.', 'Change lanes early and leave a gap.'];
+  if (s.ended === 'quit' && s.stops === 0 && s.delivered === 0) return ['Short drive!', 'Every metre adds to your earnings.'];
   if (s.passengers && s.missed >= 2) return ['Riders missed their stops.', 'Move into the bay early, then hold Brake.'];
   if (s.passengers && s.stops > 0 && s.perfectStops < s.stops / 2) return ['Nice drive. Brake a little earlier', 'to keep your next stop clean.'];
   if (s.crashes >= 2) return ['Every bump costs health.', 'Watch the lane ahead before you swipe.'];

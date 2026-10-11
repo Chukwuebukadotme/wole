@@ -8,6 +8,7 @@ export function startStreetView(host: HTMLElement): void {
   const params = new URLSearchParams(window.location.search);
   const city = (params.get('city') === 'lagos' ? 'lagos' : 'london') as CityId;
   const area = areaById(city, params.get('area') ?? '');
+  document.getElementById('loading')?.setAttribute('hidden', '');
   const stage = new Stage(host);
   stage.setCity(city, params.has('haze'));
   const streets = new Streets(stage);

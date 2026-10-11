@@ -333,7 +333,7 @@ export class Streets {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       if (lm.kind === 'cathedral') {
-        mesh.position.set(this.kit.side * 34, 0, -lm.at);
+        mesh.position.set(this.kit.side * 17, 0, -lm.at);
         mesh.rotation.y = -this.kit.side * (Math.PI / 2);
       } else mesh.position.set(0, 0, -lm.at);
       this.stage.world.add(mesh);
@@ -384,9 +384,9 @@ export class Streets {
         continue;
       }
       // Street side: buildings along the building line.
-      const landmark = layout.nearLandmark(dm, 34) && sign === kit.side && kit.id === 'lagos';
+      const landmark = layout.nearLandmark(dm, 46) && sign === kit.side && kit.id === 'lagos';
       if (!landmark) this.buildings(put, theme, sign, d0, rng, kit);
-      else put(`tree${Math.floor(rng() * 3)}`, at(x(14), 0, z(12)));
+      else if (Math.abs(dm - (layout.landmarksIn(dm - 60, dm + 60)[0]?.at ?? dm)) > 20) put(`tree${Math.floor(rng() * 3)}`, at(x(14 + rng() * 4), 0, z(6 + rng() * 12)));
       // Street furniture between the kerb and the shops.
       const lampX = isBaySide ? KERB + BAY_DEPTH + 0.8 : KERB + 0.7;
       if ((i + (sign > 0 ? 1 : 0)) % 2 === 0) put('lamp', at(x(lampX), 0.16, z(12), sign > 0 ? Math.PI : 0));

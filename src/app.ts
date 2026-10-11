@@ -47,6 +47,7 @@ interface LastDrive {
 }
 
 const START = 240;
+const params = new URLSearchParams(window.location.search);
 const LONDON_CALLS = ['Next stop: {s}.', 'This bus is for {s}.', '{s}. Mind the doors, please.'];
 const LAGOS_CALLS = ['{S}! {S}! Oya, enter!', '{S}! Enter with your change o!', '{S}! One more chance, wole wole!', 'Owa o! {S} dey here!'];
 
@@ -771,7 +772,26 @@ export class App {
     requestAnimationFrame((t) => this.loop(t));
   }
 
+  /** Watch the frame rate while driving; drop to lighter rendering if the device is struggling. */
+  private perf = { t: 0, frames: 0, slow: 0 };
+  private watchPerformance(dt: number): void {
+    if (this.stage.quality === 'low' || this.state !== 'drive' || params.has('debug')) return;
+    const p = this.perf;
+    p.t += dt;
+    p.frames++;
+    if (p.t < 2) return;
+    const fps = p.frames / p.t;
+    p.slow = fps < 38 ? p.slow + 1 : 0;
+    p.t = 0;
+    p.frames = 0;
+    if (p.slow >= 2) {
+      this.stage.quality = 'low';
+      this.stage.lighten();
+    }
+  }
+
   private frame(dt: number): void {
+    this.watchPerformance(dt);
     const d = this.drive;
     const reduce = this.save.settings.reducedMotion;
     if (d && (this.state === 'drive' || this.state === 'resuming' || this.state === 'end' || this.state === 'paused')) {

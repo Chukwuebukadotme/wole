@@ -12,6 +12,7 @@ export function startGallery(host: HTMLElement): void {
   const params = new URLSearchParams(window.location.search);
   const city = (params.get('city') === 'lagos' ? 'lagos' : 'london') as CityId;
   const view = params.get('gallery') || 'front';
+  document.getElementById('loading')?.setAttribute('hidden', '');
   const stage = new Stage(host);
   stage.setCity(city, false);
   const ground = new Shape().add(G.box(200, 0.1, 200), 0xd9cdb6, { y: -0.05 }).build();

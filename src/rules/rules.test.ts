@@ -120,4 +120,5 @@ test('advice points at the most useful thing first', () => {
   assert.match(driveAdvice({ ...base, perfectStops: 1 })[1], /next stop clean/);
   assert.match(driveAdvice({ ...base, passengers: false })[0], /money by driving/);
   assert.match(driveAdvice(base)[0], /Great drive/);
+  assert.match(driveAdvice({ ...base, ended: 'quit', stops: 0, delivered: 0 })[0], /Short drive/);
 });

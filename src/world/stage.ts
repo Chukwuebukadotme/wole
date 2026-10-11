@@ -70,7 +70,7 @@ export class Stage {
   private readonly skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } };
   private readonly sky: THREE.Mesh;
   private readonly clouds = new THREE.Group();
-  readonly quality: Quality;
+  quality: Quality;
 
   constructor(host: HTMLElement) {
     const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
@@ -89,8 +89,8 @@ export class Stage {
     this.scene.fog = this.fog;
     this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.far);
     // Soft upper-left sun; shadows only near the player, where they matter.
-    this.sun.castShadow = true;
-    const size = this.quality === 'low' ? 1024 : 2048;
+    this.sun.castShadow = this.quality === 'high';
+    const size = 2048;
     this.sun.shadow.mapSize.set(size, size);
     const cam = this.sun.shadow.camera;
     cam.left = -34;
@@ -135,6 +135,18 @@ export class Stage {
     }
     this.scene.add(this.clouds);
     this.setCity('london', false);
+  }
+
+  /** Lighter rendering for slower devices: fewer pixels and no shadows. */
+  lighten(): void {
+    this.renderer.setPixelRatio(1);
+    this.sun.castShadow = false;
+    this.renderer.shadowMap.enabled = false;
+    this.scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (m && !Array.isArray(m)) m.needsUpdate = true;
+    });
+    this.resize();
   }
 
   /** Sky, fog and light colours for a city. */
