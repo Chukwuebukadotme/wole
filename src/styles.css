@@ -113,16 +113,22 @@ kbd {
   font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
 }
+.money-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .mult {
   font-family: var(--display);
-  font-size: 1.1rem;
-  min-width: 3.4em;
+  font-size: 0.95rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 248, 230, 0.12);
   text-align: center;
 }
 .mult.hot {
   background: var(--danfo);
   color: var(--ink);
-  border-color: transparent;
 }
 .spacer {
   flex: 1;
@@ -145,8 +151,8 @@ kbd {
 #h-fuel-chip.low .gauge i {
   background: var(--bad);
 }
-#h-fuel-chip.low {
-  border-color: var(--bad);
+#h-fuel-chip.low .lbl {
+  color: var(--bad);
 }
 .pips {
   display: flex;
@@ -367,8 +373,22 @@ kbd {
   align-items: flex-end;
   flex-wrap: wrap;
 }
+/* One dashboard panel for the read-outs you glance at, next to the controls. */
+.gauges {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  padding: 6px 12px;
+}
+.g {
+  display: grid;
+  line-height: 1.1;
+}
 .seats {
-  min-width: 7rem;
+  min-width: 4.6rem;
 }
 .riders {
   display: flex;
@@ -456,6 +476,40 @@ body.touch .keys {
 #b-gas.on {
   transform: translateY(4px);
   box-shadow: 0 1px 0 #257344;
+}
+
+/* ---------- Sheets: fixed header and actions, scrolling middle ---------- */
+.card.sheet,
+.panel.sheet {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+.sheet-head {
+  display: grid;
+  gap: 10px;
+}
+.sheet .scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding-bottom: 22px;
+  /* Fade the last lines so it is clear the list carries on. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+}
+.sheet .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sheet .actions .message {
+  flex-basis: 100%;
 }
 
 /* ---------- Race read-outs ---------- */
@@ -786,9 +840,37 @@ h3 {
   opacity: 0.55;
   cursor: not-allowed;
 }
+.route-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.route-icon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
 .route-name {
   font-family: var(--display);
   font-size: 1.05rem;
+}
+.level {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-right: 3px;
+  background: var(--stripe);
+  color: var(--paper);
+}
+.level.easy {
+  background: #0b7a3e;
+}
+.level.hard {
+  background: #a3281b;
 }
 .route-path {
   font-weight: 700;
@@ -801,13 +883,6 @@ h3 {
 .route-meta {
   font-weight: 700;
   font-size: 0.85rem;
-}
-.race-cta {
-  background: #0b7a3e;
-  color: #fff;
-}
-.race-cta:hover {
-  background: #0d8c47;
 }
 .carpicks {
   display: grid;
@@ -954,10 +1029,6 @@ h3 {
   height: 12px;
   border-radius: 50%;
   border: 1px solid rgba(0, 0, 0, 0.3);
-}
-.help {
-  max-height: 100%;
-  overflow-y: auto;
 }
 .tabs {
   display: flex;
@@ -1140,6 +1211,18 @@ h3 {
 }
 
 @media (max-width: 560px) {
+  .wide-only {
+    display: none;
+  }
+  .gauges {
+    width: 100%;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 10px;
+  }
+  .riders {
+    max-width: 6.5rem;
+  }
   .big {
     font-size: 1.2rem;
   }
@@ -1147,7 +1230,7 @@ h3 {
     padding: 4px 7px;
   }
   .gauge {
-    width: 54px;
+    width: 58px;
   }
   .iconbtn {
     min-width: 40px;
@@ -1178,7 +1261,8 @@ h3 {
     place-items: end center;
     background: rgba(20, 19, 17, 0.25);
   }
-  .panel {
+  .panel,
+  .panel.sheet {
     max-height: 62%;
   }
 }

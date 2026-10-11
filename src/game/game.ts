@@ -450,7 +450,7 @@ export class Game {
       level: lv.level,
       xpPct: Math.round((lv.into / lv.need) * 100),
       event: this.event,
-      routes: ROUTES.map((r) => ({ id: r.id, name: r.name, from: r.from, to: r.to, blurb: r.blurb, locked: !unlocked.includes(r.id), unlockLevel: r.unlockLevel, selected: r.id === this.route.id })),
+      routes: ROUTES.map((r) => ({ id: r.id, name: r.name, from: r.from, to: r.to, blurb: r.blurb, difficulty: r.difficulty, locked: !unlocked.includes(r.id), unlockLevel: r.unlockLevel, selected: r.id === this.route.id })),
       best: this.save.best.cash > 0 ? `Best run ${money(this.save.best.cash)}` : null,
       dailyBonus: this.dailyText,
       autoChange: this.save.settings.autoChange,
@@ -2296,11 +2296,13 @@ export class Game {
       cam.fov += (fov - cam.fov) * Math.min(1, dt * 3);
       cam.updateProjectionMatrix();
     }
-    this.camX += (this.x * 0.6 - this.camX) * Math.min(1, dt * 4);
+    // Narrow screens see less of the road sideways, so the camera follows the bus more closely to keep it whole.
+    const follow = portrait ? 0.82 : 0.6;
+    this.camX += (this.x * follow - this.camX) * Math.min(1, dt * 4);
     const sh = !this.reduceMotion && this.shake > 0 ? this.shake : 0;
     const jitter = (): number => (sh ? (Math.random() - 0.5) * sh : 0);
     cam.position.set(this.camX + jitter(), (portrait ? 8.6 : 7) + this.y * 0.35 + jitter(), portrait ? 13.5 : 12);
-    cam.lookAt(this.camX * 0.5, 1.3, -24);
+    cam.lookAt(this.camX * (portrait ? 0.8 : 0.5), 1.3, -24);
   }
 
   private hudData(r: Run) {

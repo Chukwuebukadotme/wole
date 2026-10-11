@@ -8,10 +8,20 @@ export interface RouteCard {
   readonly from: string;
   readonly to: string;
   readonly blurb: string;
+  readonly difficulty: string;
   readonly locked: boolean;
   readonly unlockLevel: number;
   readonly selected: boolean;
 }
+
+/** Small line pictures for the route cards: market stall, lagoon bridge, expressway toll. */
+const ROUTE_ICONS: Readonly<Record<RouteId, string>> = {
+  ikorodu: '<path d="M3 9h18l-2.5-5h-13z"/><path d="M5 9v11M19 9v11M2 20h20M9 14h6v6H9z"/>',
+  mainland: '<path d="M2 15h20M3 15c2.5-6 6-8 9-8s6.5 2 9 8M7 15v-3.5M12 15V7M17 15v-3.5"/><path d="M2 20c2-1.2 4-1.2 6 0s4 1.2 6 0 4-1.2 6 0"/>',
+  lekki: '<path d="M8 21 10.5 3M16 21 13.5 3M12 7v2M12 12v2M12 17v2"/><path d="M2 10h7M15 10h7M4 10v4M20 10v4"/>',
+};
+const routeIcon = (id: RouteId): string =>
+  `<svg class="route-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ROUTE_ICONS[id]}</svg>`;
 
 export interface TitleModel {
   readonly bank: string;
@@ -226,9 +236,9 @@ export class Screens {
     const routes = m.routes
       .map(
         (r) => `<button type="button" class="route${r.selected ? ' on' : ''}" data-action="route" data-id="${r.id}" ${r.locked ? 'disabled' : ''} aria-pressed="${r.selected}">
-          <span class="route-name">${esc(r.name)}</span>
+          <span class="route-head">${routeIcon(r.id)}<span class="route-name">${esc(r.name)}</span></span>
           <span class="route-path">${esc(r.from)} → ${esc(r.to)}</span>
-          <span class="route-blurb">${r.locked ? `Unlocks at level ${r.unlockLevel}` : esc(r.blurb)}</span>
+          <span class="route-blurb">${r.locked ? `Unlocks at level ${r.unlockLevel}` : `<span class="level ${r.difficulty.toLowerCase()}">${esc(r.difficulty)}</span> ${esc(r.blurb)}`}</span>
         </button>`,
       )
       .join('');
@@ -243,7 +253,7 @@ export class Screens {
         <div class="routes" role="group" aria-label="Choose a route">${routes}</div>
         <div class="row">
           <button type="button" class="cta" data-action="start" data-focus>Start driving</button>
-          <button type="button" class="cta race-cta" data-action="open" data-id="race">Race</button>
+          <button type="button" class="ghost" data-action="open" data-id="race">Race</button>
           <button type="button" class="ghost" data-action="open" data-id="garage">Garage</button>
           <button type="button" class="ghost" data-action="open" data-id="missions">Missions</button>
           <button type="button" class="ghost" data-action="open" data-id="help">How to play</button>
@@ -281,12 +291,13 @@ export class Screens {
       .join('');
     this.show(
       'garage',
-      `<div class="panel garage-panel">
-        <div class="row between"><h2>Garage</h2><span class="wallet">${esc(m.bank)} · Level ${m.level}</span></div>
-        <div class="tabs" role="tablist">${tabs.map(([id, label]) => `<button type="button" role="tab" class="tab${m.tab === id ? ' on' : ''}" aria-selected="${m.tab === id}" data-action="tab" data-tab="${id}">${label}</button>`).join('')}</div>
-        <ul class="items">${items}</ul>
-        <p class="message" role="status">${esc(m.message)}</p>
-        <button type="button" class="cta" data-action="home" data-focus>Back</button>
+      `<div class="panel garage-panel sheet">
+        <div class="sheet-head">
+          <div class="row between"><h2>Garage</h2><span class="wallet">${esc(m.bank)} · Level ${m.level}</span></div>
+          <div class="tabs" role="tablist">${tabs.map(([id, label]) => `<button type="button" role="tab" class="tab${m.tab === id ? ' on' : ''}" aria-selected="${m.tab === id}" data-action="tab" data-tab="${id}">${label}</button>`).join('')}</div>
+        </div>
+        <ul class="items scroll">${items}</ul>
+        <div class="actions"><p class="message" role="status">${esc(m.message)}</p><button type="button" class="cta" data-action="home" data-focus>Back</button></div>
       </div>`,
     );
   }
@@ -311,15 +322,19 @@ export class Screens {
       .join('');
     this.show(
       'race',
-      `<div class="card wide">
-        <div class="title-top"><span class="eyebrow">Street racing</span><span class="wallet">${esc(m.bank)} · Level ${m.level}</span></div>
-        <h2>Race</h2>
-        <p class="lede">Beat four drivers to the finish through normal Lagos traffic. The top three win prize money.</p>
-        <div class="routes" role="group" aria-label="Choose a race">${races}</div>
-        <h3>Your car</h3>
-        <div class="carpicks" role="group" aria-label="Choose your car">${cars}</div>
-        ${m.moreCars ? '<p class="fine">Buy saloons, SUVs, luxury, electric and exotic cars in the Garage.</p>' : ''}
-        <div class="row">
+      `<div class="card wide sheet">
+        <div class="sheet-head">
+          <div class="title-top"><span class="eyebrow">Street racing</span><span class="wallet">${esc(m.bank)} · Level ${m.level}</span></div>
+          <h2>Race</h2>
+        </div>
+        <div class="scroll">
+          <p class="lede">Beat four drivers to the finish through normal Lagos traffic. The top three win prize money.</p>
+          <div class="routes" role="group" aria-label="Choose a race">${races}</div>
+          <h3>Your car</h3>
+          <div class="carpicks" role="group" aria-label="Choose your car">${cars}</div>
+          ${m.moreCars ? '<p class="fine">Buy saloons, SUVs, luxury, electric and exotic cars in the Garage.</p>' : ''}
+        </div>
+        <div class="actions row">
           <button type="button" class="cta" data-action="race-start" data-focus>Start race</button>
           <button type="button" class="ghost" data-action="open" data-id="garage">Garage</button>
           <button type="button" class="ghost" data-action="home">Back</button>
@@ -376,12 +391,17 @@ export class Screens {
     const pax = PAX_KINDS.map((k) => `<li><i class="dot" style="background:${PAX[k].color}"></i><b>${esc(PAX[k].label)}</b><span>${esc(PAX[k].perk)}</span></li>`).join('');
     this.show(
       'help',
-      `<div class="card help">
+      `<div class="card help sheet">
         <h2>How to drive</h2>
+        <div class="scroll">
+        <h3>The basics</h3>
         <ul class="howto">
           <li><b>Lanes</b><span>Swipe, or <kbd>←</kbd> <kbd>→</kbd>. Hop with a swipe up or <kbd>Space</kbd> (clears barriers, not cars).</span></li>
-          <li><b>Speed</b><span>Hold GAS or <kbd>↑</kbd> to go faster, up to 130 km/h. Let go and the bus eases back to its normal speed. Faster burns more fuel and makes bays harder to hit.</span></li>
-          <li><b>Stops</b><span>Move to the kerb lane, hold BRAKE or <kbd>↓</kbd> in the yellow bay. The bus holds while people move, then drives off. Press GO, <kbd>↑</kbd> or <kbd>Space</kbd> to leave early.</span></li>
+          <li><b>Stops</b><span>Move right to the kerb lane, then hold BRAKE or <kbd>↓</kbd> so you stop in the yellow bay. Passengers get off and on, then the bus drives off.</span></li>
+          <li><b>Speed</b><span>Hold GAS or <kbd>↑</kbd> to go faster, up to 130 km/h. Let go and the bus eases back. Faster burns more fuel and makes bays harder to hit.</span></li>
+        </ul>
+        <h3>As you go</h3>
+        <ul class="howto">
           <li><b>Change</b><span>Some passengers pay with big notes. Tap ₦50–₦500 (keys <kbd>1</kbd>–<kbd>4</kbd>) to hand back exact change for a tip.</span></li>
           <li><b>Fuel</b><span>Watch the gauge. Stop in a green fuel bay to buy fuel with your earnings. Empty tank ends the run.</span></li>
           <li><b>Warden</b><span>When the warden raises his hand, stop before the white line. Crossing costs ₦500.</span></li>
@@ -393,7 +413,8 @@ export class Screens {
         </ul>
         <h3>Who rides your danfo</h3>
         <ul class="pax">${pax}</ul>
-        <button type="button" class="cta" data-action="${next}" data-focus>${next === 'start' ? 'Start driving' : 'Got it'}</button>
+        </div>
+        <div class="actions"><button type="button" class="cta" data-action="${next}" data-focus>${next === 'start' ? 'Start driving' : 'Got it'}</button></div>
       </div>`,
     );
   }

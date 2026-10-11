@@ -59,7 +59,9 @@ export interface RouteDef {
   readonly name: string;
   readonly from: string;
   readonly to: string;
+  /** One short line for the route card. */
   readonly blurb: string;
+  readonly difficulty: 'Easy' | 'Medium' | 'Hard';
   readonly length: number;
   readonly unlockLevel: number;
   readonly fareScale: number;
@@ -79,7 +81,8 @@ export const ROUTES: readonly RouteDef[] = [
     name: 'Ikorodu Road',
     from: 'Mile 12',
     to: 'Fadeyi',
-    blurb: 'Market crowds at Mile 12, then a long run down Ikorodu Road with a BRT corridor.',
+    blurb: 'Market crowds and a BRT lane',
+    difficulty: 'Easy',
     length: 4200,
     unlockLevel: 1,
     fareScale: 1,
@@ -111,7 +114,8 @@ export const ROUTES: readonly RouteDef[] = [
     name: 'Third Mainland',
     from: 'Ebute Metta',
     to: 'CMS',
-    blurb: 'Fill up before the long bridge over the lagoon, then fight Island traffic to CMS.',
+    blurb: 'The long lagoon bridge · fares +15%',
+    difficulty: 'Medium',
     length: 5100,
     unlockLevel: 3,
     fareScale: 1.15,
@@ -140,7 +144,8 @@ export const ROUTES: readonly RouteDef[] = [
     name: 'Lekki Express',
     from: 'Lekki Phase 1',
     to: 'Ajah',
-    blurb: 'Fast expressway, a toll gate and the Ajah market crush at the end. Fares pay more here.',
+    blurb: 'Expressway and toll gate · fares +30%',
+    difficulty: 'Hard',
     length: 5400,
     unlockLevel: 6,
     fareScale: 1.3,
