@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CARS, carById, carSummary } from './cars.ts';
+import { ALL_CARS_FREE, CARS, carById, carSummary } from './cars.ts';
 import { buyItem, defaultSave, equipItem, parseSave } from './progress.ts';
-import { RACES, placeText, racePrize, raceTime, raceXp, unlockedRaces } from './races.ts';
+import { ALL_RACES_OPEN, RACES, placeText, racePrize, raceTime, raceXp, unlockedRaces } from './races.ts';
 import { getRoute } from './route.ts';
 
 test('places and race clocks read naturally', () => {
@@ -30,29 +30,32 @@ test('every race fits its route, avoids the toll and fields real cars', () => {
     assert.equal(race.field.length, 4, race.id);
     for (const id of race.field) assert.notEqual(carById(id).model, 'danfo');
   }
-  assert.deepEqual(unlockedRaces(1), ['ikorodu']);
+  assert.deepEqual(unlockedRaces(1), ALL_RACES_OPEN ? RACES.map((r) => r.id) : ['ikorodu']);
   assert.equal(unlockedRaces(99).length, RACES.length);
 });
 
-test('cars are bought with bank money, start with the danfo and survive a save round trip', () => {
+test('every car is free to race for now, and the choice survives a save round trip', () => {
   const s = defaultSave();
-  assert.deepEqual(s.owned.car, ['danfo']);
   assert.equal(s.equip.car, 'danfo');
-  s.bank = 15000;
-  assert.deepEqual(buyItem(s, 'car', 'hothatch'), { ok: false, reason: 'level' });
-  assert.deepEqual(buyItem(s, 'car', 'tokunbo'), { ok: true });
-  assert.equal(s.bank, 3000);
+  if (ALL_CARS_FREE) {
+    assert.deepEqual(s.owned.car, CARS.map((c) => c.id));
+    assert.deepEqual(buyItem(s, 'car', 'atlantic'), { ok: false, reason: 'owned' });
+    assert.equal(parseSave({ owned: { car: [] } }).owned.car.length, CARS.length);
+  } else {
+    assert.deepEqual(s.owned.car, ['danfo']);
+    s.bank = 15000;
+    assert.deepEqual(buyItem(s, 'car', 'tokunbo'), { ok: true });
+  }
   assert.ok(equipItem(s, 'car', 'tokunbo'));
   s.races.ikorodu = { best: 71.5, wins: 2 };
   const back = parseSave(JSON.parse(JSON.stringify(s)));
-  assert.deepEqual(back.owned.car, ['danfo', 'tokunbo']);
   assert.equal(back.equip.car, 'tokunbo');
   assert.deepEqual(back.races.ikorodu, { best: 71.5, wins: 2 });
 });
 
 test('a damaged save drops unknown cars and races', () => {
   const s = parseSave({ owned: { car: ['tokunbo', 'spaceship'] }, equip: { car: 'spaceship' }, races: { ikorodu: { best: 'fast' }, moon: { best: 3 } }, race: 'moon' });
-  assert.deepEqual(s.owned.car, ['danfo', 'tokunbo']);
+  assert.ok(!s.owned.car.includes('spaceship'));
   assert.equal(s.equip.car, 'danfo');
   assert.deepEqual(s.races, { ikorodu: { best: 0, wins: 0 } });
   assert.equal(s.race, 'ikorodu');

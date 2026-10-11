@@ -1,4 +1,4 @@
-import { CARS } from './cars.ts';
+import { ALL_CARS_FREE, CARS } from './cars.ts';
 import {
   HORNS,
   MISSIONS,
@@ -55,7 +55,7 @@ export function defaultSave(): SaveData {
     bank: 0,
     xp: 0,
     best: { cash: 0, dist: 0 },
-    owned: { paint: ['eko'], sticker: ['permanent'], horn: ['classic'], car: ['danfo'] },
+    owned: { paint: ['eko'], sticker: ['permanent'], horn: ['classic'], car: ALL_CARS_FREE ? CARS.map((c) => c.id) : ['danfo'] },
     equip: { paint: 'eko', sticker: 'permanent', horn: 'classic', car: 'danfo' },
     upgrades: { tank: 0, brakes: 0, body: 0, seats: 0 },
     missions: [],
@@ -97,7 +97,7 @@ export function parseSave(raw: unknown): SaveData {
   const paints = ids(owned.paint, PAINTS.map((p) => p.id), 'eko');
   const stickers = ids(owned.sticker, STICKERS.map((s) => s.id), 'permanent');
   const horns = ids(owned.horn, HORNS.map((h) => h.id), 'classic');
-  const cars = ids(owned.car, CARS.map((c) => c.id), 'danfo');
+  const cars = ALL_CARS_FREE ? CARS.map((c) => c.id) : ids(owned.car, CARS.map((c) => c.id), 'danfo');
   const equipPaint = str(equip.paint, 'eko');
   const equipSticker = str(equip.sticker, 'permanent');
   const equipHorn = str(equip.horn, 'classic');

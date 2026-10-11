@@ -97,7 +97,10 @@ export function raceById(id: string): RaceDef {
   return race;
 }
 
-export const unlockedRaces = (level: number): string[] => RACES.filter((r) => r.level <= level).map((r) => r.id);
+/** For now every race is open from the start; each race keeps its level for the unlocks to come. */
+export const ALL_RACES_OPEN = true;
+
+export const unlockedRaces = (level: number): string[] => RACES.filter((r) => ALL_RACES_OPEN || r.level <= level).map((r) => r.id);
 
 /** "1st", "2nd", "3rd", "4th"… */
 export function placeText(place: number): string {

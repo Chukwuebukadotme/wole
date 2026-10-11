@@ -378,7 +378,7 @@ export class Screens {
           <div class="routes" role="group" aria-label="Choose a race">${races}</div>
           <h3>Your car</h3>
           <div class="carpicks" role="group" aria-label="Choose your car">${cars}</div>
-          ${m.moreCars ? '<p class="fine">Buy saloons, SUVs, luxury, electric and exotic cars in the Garage.</p>' : ''}
+          ${m.moreCars ? '<p class="fine">Buy saloons, SUVs, luxury, electric and exotic cars in the Garage.</p>' : '<p class="fine">Every car is free to race for now. Pick one and go.</p>'}
         </div>
         <div class="actions row">
           <button type="button" class="cta" data-action="race-start" data-focus>Start race</button>

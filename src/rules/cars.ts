@@ -119,6 +119,8 @@ export const trafficCar = (stretch: StretchKind, posh: number, rng: Rng = Math.r
 export const trafficTruck = (stretch: StretchKind, rng: Rng = Math.random): Look => pickLook(TRUCK_MIX, stretch, 0, rng);
 
 // ---------- Cars you can own (for races) ----------
+/** For now every car is free to race from the start; prices and levels stay for the earnings-based unlocks to come. */
+export const ALL_CARS_FREE = true;
 export type CarClass = 'everyday' | 'suv' | 'luxury' | 'electric' | 'exotic';
 export const CLASS_LABEL: Readonly<Record<CarClass, string>> = { everyday: 'Everyday', suv: 'SUV', luxury: 'Luxury', electric: 'Electric', exotic: 'Exotic' };
 

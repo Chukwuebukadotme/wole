@@ -32,7 +32,7 @@ import {
   type StretchKind,
   type UpgradeId,
 } from '../rules/data.ts';
-import { CARS, MODEL_SIZE, carById, carStats, carSummary, type CarDef, type ModelId } from '../rules/cars.ts';
+import { ALL_CARS_FREE, CARS, MODEL_SIZE, carById, carStats, carSummary, type CarDef, type ModelId } from '../rules/cars.ts';
 import { eventFor, isHarmattanSeason, previousDayKey, watDayKey } from '../rules/daily.ts';
 import { changeTip, checkChange, fareFor, paymentFor, streakBonus, streakMult } from '../rules/fare.ts';
 import { applyEvent, claim, fillMissions, missionDone, missionText, startRun as startRunMissions } from '../rules/missions.ts';
@@ -53,7 +53,7 @@ import {
   type SaveData,
   type ShopKind,
 } from '../rules/progress.ts';
-import { RACES, placeText, raceById, racePrize, raceTime, raceXp, unlockedRaces, type RaceDef } from '../rules/races.ts';
+import { ALL_RACES_OPEN, RACES, placeText, raceById, racePrize, raceTime, raceXp, unlockedRaces, type RaceDef } from '../rules/races.ts';
 import { dailyShift, driverTitle, encodeChallenge, hashString, runAdvice, shortDate, type Challenge, type ShiftStats } from '../rules/shift.ts';
 import { getRoute, placements, stopSerial, stretchAt } from '../rules/route.ts';
 import { clamp, clockText, lerp, metres, mod, money, mulberry32, pick, rand, weighted, type Rng } from '../rules/util.ts';
@@ -566,7 +566,7 @@ export class Game {
     if (this.garageTab === 'car')
       items = CARS.map((c) => {
         const hits = c.id === 'danfo' ? bodyMax(s) : c.hits;
-        return { kind: 'car', id: c.id, name: c.name, detail: carSummary(c, hits), swatch: c.swatch, thumb: this.carThumb(c.id), stats: carStats(c, hits), price: c.price, owned: s.owned.car.includes(c.id), equipped: s.equip.car === c.id, lockedLevel: level < c.level ? c.level : null, affordable: bank >= c.price };
+        return { kind: 'car', id: c.id, name: c.name, detail: carSummary(c, hits), swatch: c.swatch, thumb: this.carThumb(c.id), stats: carStats(c, hits), price: c.price, owned: s.owned.car.includes(c.id), equipped: s.equip.car === c.id, lockedLevel: !ALL_CARS_FREE && level < c.level ? c.level : null, affordable: bank >= c.price };
       });
     else if (this.garageTab === 'paint')
       items = PAINTS.map((p) => ({ kind: 'paint', id: p.id, name: p.name, detail: p.price ? `₦${p.price.toLocaleString('en-NG')}` : 'Free', swatch: `linear-gradient(90deg, ${hex(p.body)} 70%, ${hex(p.stripe)} 70%)`, price: p.price, owned: s.owned.paint.includes(p.id), equipped: s.equip.paint === p.id, lockedLevel: level < p.level ? p.level : null, affordable: bank >= p.price }));
@@ -878,7 +878,7 @@ export class Game {
 
     const unlocked = [
       ...ROUTES.filter((rt) => rt.unlockLevel > before && rt.unlockLevel <= after).map((rt) => `route ${rt.name}`),
-      ...RACES.filter((rc) => rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
+      ...RACES.filter((rc) => !ALL_RACES_OPEN && rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
     ];
     const titles: Record<EndReason, string> = { crash: 'Bodywork finished', fuel: 'Fuel finish!', quit: 'You parked for the day', finish: 'Run ended', shift: 'Shift complete!' };
     const fines = r.fines + r.tolls;
@@ -1292,7 +1292,7 @@ export class Game {
           path: `${rc.from} → ${rc.to} · ${metres(rc.length)}`,
           blurb: rc.blurb,
           meta: `1st ${money(rc.prizes[0])}${best ? ` · Best ${raceTime(best)}` : ''}`,
-          locked: rc.level > level,
+          locked: !unlockedRaces(level).includes(rc.id),
           unlockLevel: rc.level,
           selected: rc.id === s.race,
         };
@@ -1335,7 +1335,7 @@ export class Game {
   private startRace(): void {
     this.sound.unlock();
     const def = raceById(this.save.race);
-    if (def.level > this.level()) return;
+    if (!unlockedRaces(this.level()).includes(def.id)) return;
     const car = carById(this.save.equip.car);
     this.screens.hideAll();
     this.clearRace();
@@ -1611,7 +1611,7 @@ export class Game {
     ].sort((a, b) => order(a) - order(b));
     const unlocked = [
       ...ROUTES.filter((rt) => rt.unlockLevel > before && rt.unlockLevel <= after).map((rt) => `route ${rt.name}`),
-      ...RACES.filter((rc) => rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
+      ...RACES.filter((rc) => !ALL_RACES_OPEN && rc.level > before && rc.level <= after).map((rc) => `race ${rc.name}`),
     ];
     const title = place === 1 ? 'You win!' : place > 0 ? `${placeText(place)} place` : r.endReason === 'crash' ? 'Wrecked!' : 'Race abandoned';
     this.screens.raceOver({
