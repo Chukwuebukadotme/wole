@@ -55,6 +55,8 @@ export interface Vehicle extends Flingable {
   accel: number;
   /** How quickly it slides across to a new lane. */
   steer: number;
+  /** Sideways speed while changing lanes, m/s. */
+  lat: number;
 }
 export interface Hazard extends Flingable {
   kind: HazardKind;
@@ -83,6 +85,8 @@ export interface Walker {
   sold: boolean;
   scared: boolean;
   t: number;
+  /** Step phase: advances with distance walked, so the bob keeps time with the pace. */
+  stride: number;
 }
 
 export interface StretchInfo {
@@ -215,6 +219,7 @@ export class Traffic {
       aim: 0,
       accel: 3.5,
       steer: 3,
+      lat: 0,
       flung: false,
       flungT: 0,
       vx: 0,
@@ -327,13 +332,13 @@ export class Traffic {
       if (Math.random() < pedChance && !env.kerbReserved(d)) {
         const side = Math.random() < 0.5 ? -1 : 1;
         const mesh = this.take('w:pedestrian', () => makeFigure('walker'));
-        this.walkers.push({ kind: 'pedestrian', mesh, x: side * (KERB_X + 1.2), d, fromX: side * (KERB_X + 1.2), toX: -side * (KERB_X + 1.2), walking: false, triggerAt: rand(35, 70), hurry: 1, dodge: 0, sold: false, scared: false, t: Math.random() * 5 });
+        this.walkers.push({ kind: 'pedestrian', mesh, x: side * (KERB_X + 1.2), d, fromX: side * (KERB_X + 1.2), toX: -side * (KERB_X + 1.2), walking: false, triggerAt: rand(35, 70), hurry: 1, dodge: 0, sold: false, scared: false, t: Math.random() * 5, stride: 0 });
       }
       if (Math.random() < hawkChance) {
         const line = pick([0, 1, 2]);
         const x = laneX(line) + 1.6;
         const mesh = this.take('w:hawker', () => makeFigure('hawker'));
-        this.walkers.push({ kind: 'hawker', mesh, x, d: d + 10, fromX: x, toX: x, walking: false, triggerAt: 0, hurry: 1, dodge: 0, sold: false, scared: false, t: Math.random() * 5 });
+        this.walkers.push({ kind: 'hawker', mesh, x, d: d + 10, fromX: x, toX: x, walking: false, triggerAt: 0, hurry: 1, dodge: 0, sold: false, scared: false, t: Math.random() * 5, stride: 0 });
       }
       this.walkerD += rand(25, 45);
     }
@@ -415,9 +420,14 @@ export class Traffic {
       } else if (v.cross) {
         v.x += v.vx * dt;
       } else {
-        v.x += (laneX(v.lane) - v.x) * Math.min(1, dt * v.steer);
+        // Lane changes ease across on a critically damped spring, and the nose turns into the move.
+        const w = v.steer * 1.25;
+        v.lat += (w * w * (laneX(v.lane) - v.x) - 2 * w * v.lat) * dt;
+        v.x += v.lat * dt;
+        v.mesh.rotation.y = clamp(-Math.atan2(v.lat, Math.max(4, v.v)), -0.25, 0.25) * 0.8;
       }
       v.mesh.position.set(v.x, v.y, -(v.d - D));
+      if (!v.flung) this.turnWheels(v, dt);
       const kerbExit = v.driver === 'traffic' && !v.flung && !v.cross && v.lane === KERB && env.kerbReserved(v.d) && v.d > D + 20;
       // A BRT bus chasing the player and a rival danfo get a longer leash; the game retires a rival that gets away.
       const tooFarBehind = v.d < D - (v.behind || v.driver === 'rival' ? 150 : 30);
@@ -463,6 +473,7 @@ export class Traffic {
             w.walking = false;
             w.triggerAt = -1e9;
           } else w.x += dir * step;
+          w.stride += (step / 0.7) * Math.PI;
           w.mesh.rotation.y = dir > 0 ? -Math.PI / 2 : Math.PI / 2;
         }
       }
@@ -470,13 +481,28 @@ export class Traffic {
         w.dodge -= dt;
         w.x += Math.sign(w.fromX - w.x || 1) * 6 * dt;
       }
-      const hop = w.dodge > 0 ? Math.sin(w.dodge * 9) * 0.5 : w.walking ? Math.abs(Math.sin(w.t * 9)) * 0.06 : 0;
+      // One bob per step while walking; a dodge is a jump back.
+      const hop = w.dodge > 0 ? Math.sin(w.dodge * 9) * 0.5 : w.walking ? Math.abs(Math.sin(w.stride)) * 0.06 : 0;
+      w.mesh.rotation.z = w.walking && w.dodge <= 0 ? Math.sin(w.stride) * 0.035 : 0;
       w.mesh.position.set(w.x, Math.max(0, hop) + (Math.abs(w.x) > KERB_X ? 0.15 : 0), -(w.d - D));
       if (w.kind === 'hawker') w.mesh.rotation.y = Math.sin(w.t * 0.8) * 0.6;
       if (w.d < D - 20) {
         this.give(`w:${w.kind}`, w.mesh);
         this.walkers.splice(i, 1);
       }
+    }
+  }
+
+  /** Wheels turn with the ground covered; front wheels steer into a lane change. */
+  private turnWheels(v: Vehicle, dt: number): void {
+    const wheels = v.mesh.userData.wheels as THREE.Object3D[] | undefined;
+    if (!wheels || wheels.length === 0) return;
+    const rate = (v.mesh.userData.spinRate as number | undefined) ?? 0;
+    const ground = v.cross ? Math.abs(v.vx) : v.v;
+    const steer = v.cross ? 0 : clamp(-Math.atan2(v.lat * 1.6, Math.max(4, v.v)), -0.4, 0.4);
+    for (const w of wheels) {
+      w.rotation.x = (w.rotation.x + ground * dt * rate) % (Math.PI * 2);
+      if (w.userData.front === true) w.rotation.y = steer;
     }
   }
 

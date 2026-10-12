@@ -3,6 +3,8 @@ import { lightPoolTexture } from './textures.ts';
 
 const lambertCache = new Map<number, THREE.MeshLambertMaterial>();
 const basicCache = new Map<number, THREE.MeshBasicMaterial>();
+/** The colour of each shared plain material, so models can merge their plain parts into one mesh. */
+const plain = new WeakMap<THREE.Material, number>();
 
 /** Shared lit material per colour. */
 export function lambert(color: number): THREE.MeshLambertMaterial {
@@ -10,8 +12,50 @@ export function lambert(color: number): THREE.MeshLambertMaterial {
   if (!m) {
     m = new THREE.MeshLambertMaterial({ color });
     lambertCache.set(color, m);
+    plain.set(m, color);
   }
   return m;
+}
+
+/** Colour of a shared plain lit material, or null for anything textured, glowing or one-off. */
+export function plainColor(m: THREE.Material | THREE.Material[]): number | null {
+  return Array.isArray(m) ? null : (plain.get(m) ?? null);
+}
+
+const glossy: THREE.MeshStandardMaterial[] = [];
+let environment: THREE.Texture | null = null;
+let reflectionLevel = 0.7;
+
+/** Register a glossy material (car paint) so it reflects the sky, dimming with the daylight. */
+export function reflective<M extends THREE.MeshStandardMaterial>(m: M): M {
+  m.envMap = environment;
+  m.envMapIntensity = reflectionLevel;
+  glossy.push(m);
+  return m;
+}
+
+/** Sky reflections for every glossy material; null switches them off (low graphics). */
+export function setEnvironment(tex: THREE.Texture | null): void {
+  environment = tex;
+  for (const m of glossy) {
+    m.envMap = tex;
+    m.needsUpdate = true;
+  }
+}
+
+/** How strongly glossy things reflect the sky: full by day, faint at night. */
+export function setReflectionLevel(k: number): void {
+  if (Math.abs(k - reflectionLevel) < 0.01) return;
+  reflectionLevel = k;
+  for (const m of glossy) m.envMapIntensity = k;
+}
+
+let vertexLambert: THREE.MeshLambertMaterial | null = null;
+
+/** Lit material that takes its colour from the mesh's vertices: many parts, one draw call. */
+export function lambertVC(): THREE.MeshLambertMaterial {
+  vertexLambert ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+  return vertexLambert;
 }
 
 /** Shared unlit material per colour. */

@@ -3,7 +3,7 @@ import { SoundBoard } from '../audio.ts';
 import { carModelsReady, makeVehicle } from '../engine/cars.ts';
 import { makeBrtCamera, makeJunction, makeNameTag, makeRaceGate, makeStation, makeStop, makeToll, plateMaterial, removeNameTag, type JunctionVisual, type TollVisual } from '../engine/features.ts';
 import { makeDanfo, makeFigure, type DanfoModel, type FigureKind } from '../engine/models.ts';
-import { Stage } from '../engine/stage.ts';
+import { Stage, type Quality } from '../engine/stage.ts';
 import { Thumbnails } from '../engine/thumbs.ts';
 import { Tiles, type TileContext } from '../engine/tiles.ts';
 import {
@@ -56,6 +56,7 @@ import {
 import { ALL_RACES_OPEN, RACES, placeText, raceById, racePrize, raceTime, raceXp, unlockedRaces, type RaceDef } from '../rules/races.ts';
 import { dailyShift, driverTitle, encodeChallenge, hashString, runAdvice, shortDate, type Challenge, type ShiftStats } from '../rules/shift.ts';
 import { getRoute, placements, stopSerial, stretchAt } from '../rules/route.ts';
+import { critical, fixedSteps, laneSpring, nextSpeed, springStep, type Spring } from '../rules/motion.ts';
 import { clamp, clockText, lerp, metres, mod, money, mulberry32, pick, rand, weighted, type Rng } from '../rules/util.ts';
 import { ChangePanel } from '../ui/change.ts';
 import { Hud, type AlertTone, type RaceHudData } from '../ui/hud.ts';
@@ -85,16 +86,22 @@ interface Waiting {
   readonly kind: PaxKind;
   readonly mesh: THREE.Group;
 }
+/** A passenger walking to the door and stepping in, or stepping down and walking away. */
 interface Mover {
   readonly mesh: THREE.Group;
   readonly kind: FigureKind;
   t: number;
   readonly board: boolean;
-  readonly x0: number;
-  readonly z0: number;
-  readonly x1: number;
-  readonly z1: number;
+  /** Where they are heading in the stop's frame; boarders head for the door, then step up into it. */
+  x1: number;
+  z1: number;
+  /** Walking pace, m/s. */
+  speed: number;
+  /** 0 walking to the door (or off the step), 1 stepping up or down, 2 walking along the pavement. */
+  stage: number;
   readonly dir: number;
+  /** The rival danfo they are boarding, or null for the player's bus. */
+  readonly rival: Vehicle | null;
 }
 interface StopEnt {
   readonly key: string;
@@ -330,6 +337,24 @@ export class Game {
   /** Suspension: body bounce in metres and its speed, kicked by potholes, landings and boarding. */
   private bob = 0;
   private bobV = 0;
+  /** Sideways speed (m/s) and acceleration from the lane-change spring, and forward acceleration. */
+  private vx = 0;
+  private ax = 0;
+  private longAccel = 0;
+  private lastSpeed = 0;
+  /** Body pitch, roll and yaw on springs above the wheels; front-wheel steering angle. */
+  private readonly pitch: Spring = { x: 0, v: 0 };
+  private readonly roll: Spring = { x: 0, v: 0 };
+  private yaw = 0;
+  private steerAngle = 0;
+  private wheelSpin = 0;
+  /** Camera lag (m) as the bus pulls away or brakes. */
+  private camLag = 0;
+  /** Leftover time between fixed simulation steps. */
+  private simAcc = 0;
+  /** Frame-time watch for Auto graphics: seconds and frames in the current window. */
+  private watchT = 0;
+  private watchN = 0;
   private run: Run | null = null;
   private garageTab: GarageTab = 'car';
   private garageFrom: 'title' | 'race' = 'title';
@@ -365,11 +390,12 @@ export class Game {
   private readonly reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
   constructor(host: HTMLElement) {
-    this.stage = new Stage(host);
+    this.save = this.loadSave();
+    const graphics = this.save.settings.graphics;
+    this.stage = new Stage(host, graphics === 'auto' ? Stage.autoQuality() : graphics);
     this.thumbs = new Thumbnails(this.stage.renderer);
     this.tiles = new Tiles(this.stage.scene);
     this.traffic = new Traffic(this.stage.scene);
-    this.save = this.loadSave();
     this.event = eventFor(new Date());
     this.route = this.routeFromSave();
     this.sound.setMuted(this.save.settings.muted);
@@ -400,6 +426,7 @@ export class Game {
         this.showTitle();
       },
       toggleSound: () => this.toggleMute(),
+      toggleGraphics: () => this.toggleGraphics(),
       resume: () => this.resume(),
       quit: () => this.endRun('quit'),
       again: () => (this.lastKind === 'race' ? this.startRace() : this.startRun(this.lastRunMode)),
@@ -497,6 +524,7 @@ export class Game {
       dailyBonus: this.dailyText,
       autoChange: this.save.settings.autoChange,
       muted: this.save.settings.muted,
+      graphics: this.graphicsLabel(),
       shift: this.shiftCard(),
       challenge: this.challengeText(),
     });
@@ -661,6 +689,40 @@ export class Game {
     this.bus.group.visible = false;
     this.rideMesh.add(this.stage.busLight, this.stage.busLight.target);
     this.size = MODEL_SIZE[car.model];
+  }
+
+  private graphicsLabel(): string {
+    const name = (q: Quality): string => q[0]?.toUpperCase() + q.slice(1);
+    const g = this.save.settings.graphics;
+    return g === 'auto' ? `Auto (${name(this.stage.quality)})` : name(g);
+  }
+
+  /** Auto → High → Medium → Low → Auto. */
+  private toggleGraphics(): void {
+    const order = ['auto', 'high', 'medium', 'low'] as const;
+    const next = order[(order.indexOf(this.save.settings.graphics) + 1) % order.length] ?? 'auto';
+    this.save.settings.graphics = next;
+    this.stage.setQuality(next === 'auto' ? Stage.autoQuality() : next);
+    this.persist();
+    this.showTitle();
+  }
+
+  /** On Auto, step down a tier when a few seconds of driving run below about 28 frames a second. */
+  private watchFrames(dt: number): void {
+    if (this.save.settings.graphics !== 'auto' || this.mode !== 'play' || dt <= 0) {
+      this.watchT = 0;
+      this.watchN = 0;
+      return;
+    }
+    this.watchT += dt;
+    this.watchN += 1;
+    if (this.watchT < 3) return;
+    const slow = this.watchT / this.watchN > 1 / 28;
+    this.watchT = 0;
+    this.watchN = 0;
+    if (!slow) return;
+    const down: Record<Quality, Quality> = { high: 'medium', medium: 'low', low: 'low' };
+    this.stage.setQuality(down[this.stage.quality]);
   }
 
   private toggleMute(): void {
@@ -1005,7 +1067,11 @@ export class Game {
   }
 
   setBrake(on: boolean): void {
-    if (this.run) this.run.braking = on && this.mode === 'play';
+    const r = this.run;
+    if (!r) return;
+    const was = r.braking;
+    r.braking = on && this.mode === 'play';
+    if (r.braking && !was && this.speed > 8) this.sound.brake();
   }
 
   /** Hold to drive above cruise speed; pressing it while parked drives off. */
@@ -1085,33 +1151,20 @@ export class Game {
     let dt = (now - this.lastT) / 1000;
     this.lastT = now;
     if (!(dt > 0)) dt = 0;
-    dt = Math.min(dt, 0.05);
+    dt = Math.min(dt, 0.1);
+    this.watchFrames(dt);
     const r = this.run;
-
-    if (this.mode === 'play' && r) this.updatePlay(dt, r);
-    else if (this.mode === 'title') {
-      this.speed += (8 - this.speed) * Math.min(1, dt * 2);
-      this.lane = 1;
-    } else if (this.mode === 'garage') this.speed = Math.max(0, this.speed - 10 * dt);
-    else if (this.mode === 'ending' && r) {
-      r.endT += dt;
-      this.speed = Math.max(0, this.speed - 14 * dt);
-      if (r.endT > 1.4) this.finishRun();
-    } else if (this.mode === 'over') this.speed = Math.max(0, this.speed - 14 * dt);
-
+    // Driving, traffic and collisions advance in fixed steps; everything drawn follows once per frame.
+    this.simAcc = fixedSteps(this.simAcc, dt, (h) => this.step(h));
     if (this.mode !== 'paused') {
-      // Crash shake fades in every mode, so it never outlives the run.
-      this.shake = Math.max(0, this.shake - dt * 1.8);
-      if (this.mode !== 'play') this.dist += this.speed * dt;
-      this.updateMotion(dt);
       this.syncFeatures();
       this.animateFeatures(dt);
-      this.traffic.update(dt, this.trafficEnv());
       this.tiles.update(this.dist, this.tileCtx());
     }
     this.updateSky(dt);
     this.updateRideMesh(dt);
     this.updateCamera(dt);
+    this.stage.follow(this.dist, this.x);
     if (r && (this.mode === 'play' || this.mode === 'ending')) {
       if (r.race) this.hud.updateRace(this.raceHud(r, r.race));
       else {
@@ -1124,8 +1177,42 @@ export class Game {
     this.stage.render();
   }
 
+  /** One fixed simulation step. */
+  private step(dt: number): void {
+    const r = this.run;
+    if (this.mode === 'play' && r) this.updatePlay(dt, r);
+    else if (this.mode === 'title') {
+      this.speed += (8 - this.speed) * Math.min(1, dt * 2);
+      this.lane = 1;
+    } else if (this.mode === 'garage') this.speed = Math.max(0, this.speed - 10 * dt);
+    else if (this.mode === 'ending' && r) {
+      r.endT += dt;
+      this.speed = Math.max(0, this.speed - 14 * dt);
+      if (r.endT > 1.4) this.finishRun();
+    } else if (this.mode === 'over') this.speed = Math.max(0, this.speed - 14 * dt);
+    if (this.mode === 'paused') return;
+    // Crash shake fades in every mode, so it never outlives the run.
+    this.shake = Math.max(0, this.shake - dt * 1.8);
+    if (this.mode !== 'play') this.dist += this.speed * dt;
+    this.updateMotion(dt);
+    this.traffic.update(dt, this.trafficEnv());
+  }
+
   private updateMotion(dt: number): void {
-    this.x += (laneX(this.lane) - this.x) * Math.min(1, dt * 11 * this.handling);
+    // Lane changes ride a critically damped spring: as quick as before, but they start and finish smoothly.
+    const lateral: Spring = { x: this.x, v: this.vx };
+    this.ax = critical(lateral, laneX(this.lane), laneSpring(this.handling), dt);
+    this.x = lateral.x;
+    this.vx = lateral.v;
+    this.longAccel = (this.speed - this.lastSpeed) / dt;
+    this.lastSpeed = this.speed;
+    // The body sits on springs above the wheels, stepped with the simulation so it moves the same at any frame rate:
+    // the nose dips under braking and lifts on the gas, the body rolls with a lane change and sways back, and
+    // potholes, landings and boarding make it bounce. Spikes (a crash) are capped.
+    springStep(this.pitch, clamp(this.longAccel, -24, 8) * 0.0024, 70, 10, dt);
+    springStep(this.roll, clamp(this.ax * 0.0022, -0.08, 0.08), 80, 9, dt);
+    this.bobV += (-90 * this.bob - 9 * this.bobV) * dt;
+    this.bob += this.bobV * dt;
     if (this.air) {
       this.vy -= TUNING.gravity * dt;
       this.y += this.vy * dt;
@@ -1197,9 +1284,7 @@ export class Game {
     const empty = r.fuel <= 0;
     const target = r.parked || r.braking || empty ? 0 : r.gas ? TUNING.gasMax : cruise;
     const brake = TUNING.brake * r.brakeFactor * lerp(1, 0.72, r.rain);
-    if (r.parked) this.speed = 0;
-    else if (this.speed > target) this.speed = Math.max(target, this.speed - (r.braking ? brake : TUNING.coast) * dt);
-    else this.speed = Math.min(target, this.speed + (this.speed < cruise ? TUNING.accel : TUNING.gasAccel) * dt);
+    this.speed = r.parked ? 0 : nextSpeed(this.speed, target, cruise, r.braking, brake, dt);
 
     const moved = this.speed * dt;
     this.dist += moved;
@@ -1825,8 +1910,7 @@ export class Game {
     const destD = this.runStart + lap * this.route.length + def.at;
     r.riders.push({ kind: w.kind, fromD: st.at, destSerial, destD, destName: def.name, deadline: r.t + (destD - st.at) / 9 + 20, smooth: true });
     st.boarded += 1;
-    const doorZ = -1.6 - st.vis.group.position.z;
-    st.movers.push({ mesh: w.mesh, kind: w.kind, t: 0, board: true, x0: w.mesh.position.x, z0: w.mesh.position.z, x1: this.x + 1.25, z1: doorZ, dir: 0 });
+    this.boardMover(st, w, null);
     this.sound.board();
     this.kick(0.25);
     if (w.kind === 'trader') this.hud.say('Mama with basin don enter. Two seats!', 'info');
@@ -1891,11 +1975,49 @@ export class Game {
       }
       r.changeQueue.push({ who: PAX[rider.kind].label, fare, paid, due: paid - fare });
     }
+    // They step down from the open door, cross to the pavement and walk off along it.
     const fig = this.figure(rider.kind);
     const z = -1.6 - st.vis.group.position.z;
-    fig.position.set(this.x + 1.3, 0.15, z);
+    fig.position.set(this.x + 0.9, 0.6, z);
+    fig.rotation.y = -Math.PI / 2;
     st.vis.group.add(fig);
-    st.movers.push({ mesh: fig, kind: rider.kind, t: 0, board: false, x0: this.x + 1.3, z0: z, x1: KERB_X + rand(1, 2.6), z1: z, dir: Math.random() < 0.5 ? 1 : -1 });
+    st.movers.push({ mesh: fig, kind: rider.kind, t: 0, board: false, x1: KERB_X + rand(1, 2.6), z1: z + rand(-0.8, 0.8), speed: 1.4, stage: 1, dir: Math.random() < 0.5 ? 1 : -1, rival: null });
+  }
+
+  /** Send a waiting passenger to a danfo's door: a short walk if they gathered there, a dash if not. */
+  private boardMover(st: StopEnt, w: Waiting, rival: Vehicle | null): void {
+    const door = this.doorAt(st, rival);
+    const far = Math.hypot(door.x - w.mesh.position.x, door.z - w.mesh.position.z);
+    st.movers.push({ mesh: w.mesh, kind: w.kind, t: 0, board: true, x1: door.x, z1: door.z, speed: clamp(far / 0.8, 1.8, 6), stage: 0, dir: 0, rival });
+  }
+
+  /** A danfo's door in the stop's frame: the player's bus, or a rival. */
+  private doorAt(st: StopEnt, rival: Vehicle | null): { x: number; z: number } {
+    if (rival) return { x: rival.x + 1.25, z: st.at - rival.d - 1.6 };
+    return { x: this.x + 1.25, z: -1.6 - st.vis.group.position.z };
+  }
+
+  /**
+   * Walk a person towards (x, z) in their parent's frame at `speed` m/s: they turn to face the way and bob once per
+   * step of about 0.7 m, so the bounce matches the pace. Returns true on arrival.
+   */
+  private walkFigure(m: THREE.Object3D, x: number, z: number, speed: number, dt: number, baseY: number): boolean {
+    const dx = x - m.position.x;
+    const dz = z - m.position.z;
+    const d = Math.hypot(dx, dz);
+    const moved = Math.min(d, speed * dt);
+    if (d > 1e-3) {
+      m.position.x += (dx / d) * moved;
+      m.position.z += (dz / d) * moved;
+      const want = Math.atan2(-dx, -dz);
+      m.rotation.y += Math.atan2(Math.sin(want - m.rotation.y), Math.cos(want - m.rotation.y)) * Math.min(1, dt * 10);
+    }
+    const stride = ((m.userData.stride as number | undefined) ?? 0) + (moved / 0.7) * Math.PI;
+    m.userData.stride = stride;
+    const sway = this.reduceMotion || moved === 0 ? 0 : 1;
+    m.position.y = baseY + Math.abs(Math.sin(stride)) * 0.06 * sway;
+    m.rotation.z = Math.sin(stride) * 0.035 * sway;
+    return d <= speed * dt + 1e-3;
   }
 
   /** One popup for everything paid at this stop. */
@@ -2044,7 +2166,7 @@ export class Game {
         const w = rv.taken < rv.cap && best >= 0 ? st.waiting.splice(best, 1)[0] : undefined;
         if (w) {
           rv.taken += 1;
-          st.movers.push({ mesh: w.mesh, kind: w.kind, t: 0, board: true, x0: w.mesh.position.x, z0: w.mesh.position.z, x1: v.x + 1.25, z1: doorZ, dir: 0 });
+          this.boardMover(st, w, v);
         } else {
           rv.phase = 'leaving';
           if (rv.taken > 0) {
@@ -2488,32 +2610,72 @@ export class Game {
 
   private animateFeatures(dt: number): void {
     const D = this.dist;
+    const r = this.run;
+    const free = r ? r.seats - this.seatsUsed(r) : 0;
     for (const s of this.stops.values()) {
       s.vis.group.position.z = -(s.at - D);
-      for (const w of s.waiting) {
+      // As the danfo pulls into the bay, the people it can take crowd round where its door will stop.
+      const rel = D - s.at;
+      const pulling = r !== null && !r.race && !s.left && this.lane === KERB && this.speed < 8 && rel > -(TUNING.zoneBefore + TUNING.shortStop + 8) && rel < TUNING.zoneAfter;
+      const door = this.doorAt(s, null);
+      s.waiting.forEach((w, i) => {
         const t = ((w.mesh.userData.t as number | undefined) ?? 0) + dt;
         w.mesh.userData.t = t;
+        if (pulling && PAX[w.kind].seats <= free) {
+          const x = KERB_X + 0.55 + (i % 3) * 0.45;
+          const z = door.z + (i % 2 === 1 ? 1 : -1) * (0.6 + Math.floor(i / 2) * 0.55);
+          if (!this.walkFigure(w.mesh, x, z, 1.9, dt, 0.15)) return;
+          // Waiting at the door, facing the road.
+          w.mesh.rotation.y += (Math.PI / 2 - w.mesh.rotation.y) * Math.min(1, dt * 6);
+        }
+        // Standing: a little hop now and then to flag the danfo down.
+        w.mesh.rotation.z = 0;
         w.mesh.position.y = 0.15 + (Math.sin(t * 2.4) > 0.97 ? 0.08 : 0);
-      }
+      });
       for (let i = s.movers.length - 1; i >= 0; i--) {
         const m = s.movers[i];
         if (!m) continue;
         m.t += dt;
+        const p = m.mesh.position;
+        let done = m.t > 9;
         if (m.board) {
-          const k = Math.min(1, m.t / 0.35);
-          m.mesh.position.set(m.x0 + (m.x1 - m.x0) * k, 0.15 + Math.abs(Math.sin(m.t * 16)) * 0.12, m.z0 + (m.z1 - m.z0) * k);
-          if (k >= 1) {
-            this.freeFigure(m.mesh);
-            s.movers.splice(i, 1);
+          const d = this.doorAt(s, m.rival);
+          // They count as aboard already; if the danfo pulls away first, they make it in rather than chase it.
+          const leaving = m.rival ? m.rival.v > 2 : r?.parked?.key !== s.key;
+          if (leaving && m.stage === 0) done = true;
+          else if (m.stage === 0) {
+            // Off the kerb to the door (the door moves only if the danfo does).
+            if (this.walkFigure(m.mesh, d.x, d.z, m.speed, dt, p.x > KERB_X ? 0.15 : 0.02)) {
+              m.stage = 1;
+              m.t = 0;
+            }
+          } else {
+            // Step up and in.
+            const k = Math.min(1, m.t / 0.3);
+            p.x += (d.x - 0.55 - p.x) * Math.min(1, dt * 12);
+            p.z = d.z;
+            p.y = 0.02 + 0.6 * Math.sin((k * Math.PI) / 2);
+            m.mesh.rotation.z = 0;
+            m.mesh.rotation.y += (Math.PI / 2 - m.mesh.rotation.y) * Math.min(1, dt * 12);
+            done ||= k >= 1;
           }
+        } else if (m.stage === 1) {
+          // Step down from the door onto the road.
+          const k = Math.min(1, m.t / 0.3);
+          p.x += 2 * dt;
+          p.y = 0.6 - 0.58 * Math.sin((k * Math.PI) / 2);
+          if (k >= 1) m.stage = 0;
+        } else if (m.stage === 0) {
+          // Across to the pavement…
+          if (this.walkFigure(m.mesh, m.x1, m.z1, m.speed, dt, p.x > KERB_X ? 0.15 : 0.02)) m.stage = 2;
         } else {
-          if (m.t < 0.6) m.mesh.position.x = m.x0 + (m.x1 - m.x0) * (m.t / 0.6);
-          else m.mesh.position.z += m.dir * 1.3 * dt;
-          m.mesh.position.y = 0.15 + Math.abs(Math.sin(m.t * 9)) * 0.06;
-          if (m.t > 7) {
-            this.freeFigure(m.mesh);
-            s.movers.splice(i, 1);
-          }
+          // …and away along it.
+          this.walkFigure(m.mesh, m.x1, p.z + m.dir * 5, 1.3, dt, 0.15);
+          done ||= m.t > 7;
+        }
+        if (done) {
+          this.freeFigure(m.mesh);
+          s.movers.splice(i, 1);
         }
       }
       if (this.mode !== 'play' && D > s.at + TUNING.zoneAfter) s.done = true;
@@ -2583,19 +2745,24 @@ export class Game {
     const car = this.ride !== 'danfo' ? this.rideMesh : null;
     const g = car ?? this.bus.group;
     g.position.set(this.x, this.y, 0);
-    const lean = (laneX(this.lane) - this.x) * -0.035;
-    g.rotation.z += (lean - g.rotation.z) * Math.min(1, dt * 10);
-    // Nose dips under braking and lifts a little when you floor it.
-    const pitch = r?.braking && this.speed > 1 ? 0.045 : r?.gas && this.mode === 'play' ? -0.02 : 0;
-    g.rotation.x += (pitch - g.rotation.x) * Math.min(1, dt * 6);
-    // Damped spring for the suspension bounce.
-    this.bobV += (-90 * this.bob - 9 * this.bobV) * dt;
-    this.bob += this.bobV * dt;
+    g.rotation.order = 'YXZ';
+    g.rotation.x = this.reduceMotion ? 0 : this.pitch.x;
+    g.rotation.z = this.reduceMotion ? 0 : this.roll.x;
+    // The nose turns into a lane change (a little, so the bus never looks sideways at low speed).
+    const heading = clamp(-Math.atan2(this.vx, Math.max(6, this.speed)), -0.2, 0.2) * 0.75;
+    this.yaw += (heading - this.yaw) * Math.min(1, dt * 14);
+    g.rotation.y = this.yaw;
     if (!this.reduceMotion) g.position.y = this.y + this.bob;
-    if (car) {
-      // Car models face the other way inside their group, so their wheels turn the other way.
-      for (const w of car.userData.wheels as THREE.Object3D[]) w.rotation.x += (this.speed * dt) / 0.36;
-    } else for (const w of this.bus.wheels) w.rotation.x -= (this.speed * dt) / 0.45;
+    // Front wheels steer ahead of the body; every wheel turns with the distance driven.
+    this.steerAngle += (clamp(-Math.atan2(this.vx * 1.6, Math.max(4, this.speed)), -0.42, 0.42) - this.steerAngle) * Math.min(1, dt * 12);
+    if (this.mode !== 'paused') this.wheelSpin += this.speed * dt;
+    const wheels = car ? (car.userData.wheels as THREE.Object3D[]) : this.bus.wheels;
+    // Car models face the other way inside their group, so their wheels turn the other way.
+    const spin = car ? this.wheelSpin / 0.36 : -this.wheelSpin / 0.45;
+    for (const w of wheels) {
+      w.rotation.x = spin;
+      w.rotation.y = w.userData.front === true ? this.steerAngle : 0;
+    }
     const door = this.bus.door;
     const k = (door.userData.k as number | undefined) ?? 0;
     const target = this.run?.parked ? 1 : 0;
@@ -2625,9 +2792,15 @@ export class Game {
     // Narrow screens see less of the road sideways, so the camera follows the bus more closely to keep it whole.
     const follow = portrait ? 0.82 : 0.6;
     this.camX += (this.x * follow - this.camX) * Math.min(1, dt * 4);
-    const sh = !this.reduceMotion && this.shake > 0 ? this.shake : 0;
-    const jitter = (): number => (sh ? (Math.random() - 0.5) * sh : 0);
-    cam.position.set(this.camX + jitter(), (portrait ? 8.6 : 7) + this.y * 0.35 + jitter(), portrait ? 13.5 : 12);
+    // The camera trails a little as the bus pulls away and closes in under braking, so speed changes read.
+    if (this.mode !== 'paused') this.camLag += (clamp(this.longAccel * 0.05, -0.8, 0.45) - this.camLag) * Math.min(1, dt * 3);
+    // A crash shakes the camera smoothly (two out-of-step waves), fading out; no frame-to-frame jitter.
+    const sh = !this.reduceMotion && this.shake > 0 ? this.shake * 0.5 : 0;
+    const t = performance.now() / 1000;
+    const jx = sh * Math.sin(t * 43);
+    const jy = sh * Math.sin(t * 57 + 1.3);
+    const lag = this.reduceMotion ? 0 : this.camLag;
+    cam.position.set(this.camX + jx, (portrait ? 8.6 : 7) + this.y * 0.35 + jy, (portrait ? 13.5 : 12) + lag);
     cam.lookAt(this.camX * (portrait ? 0.8 : 0.5), 1.3, -24);
   }
 

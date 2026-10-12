@@ -1,7 +1,38 @@
 import * as THREE from 'three';
+import { setSurfaceDetail, vehicleMaterial } from '../../art/surfaces.ts';
 import { clamp, lerp, mod } from '../rules/util.ts';
-import { night, setNightLevel } from './materials.ts';
+import { night, reflective, setEnvironment, setNightLevel, setReflectionLevel } from './materials.ts';
 import { skylineWindowsTexture } from './textures.ts';
+
+export type Quality = 'high' | 'medium' | 'low';
+
+/** Graphics tiers: render resolution and sun-shadow map size (0: contact shadows only, no sky reflections). */
+export const TIERS: Readonly<Record<Quality, { pixels: number; shadow: number; reflections: boolean }>> = {
+  high: { pixels: 2, shadow: 2048, reflections: true },
+  medium: { pixels: 1.25, shadow: 1024, reflections: true },
+  low: { pixels: 1, shadow: 0, reflections: false },
+};
+
+const SUNRISE = 6;
+const SUNSET = 18.8;
+const MOON = new THREE.Vector3(-0.35, 0.85, 0.4).normalize();
+const sunAt = new THREE.Vector3();
+
+/**
+ * Where the sun is (a unit vector from the ground towards it) at a game hour. It rises on the right of the road and
+ * sets on the left, always a little behind the camera so the faces you see are lit; the moon stands in at night.
+ */
+export function sunPosition(hour: number, out: THREE.Vector3): THREE.Vector3 {
+  const h = mod(hour, 24);
+  const day = clamp((h - SUNRISE) / (SUNSET - SUNRISE), 0, 1);
+  const elev = 0.2 + Math.sin(day * Math.PI) * 0.95;
+  const across = Math.cos(day * Math.PI) * 0.9 - 0.3;
+  const len = Math.hypot(across, 0.55);
+  out.set((across / len) * Math.cos(elev), Math.sin(elev), (0.55 / len) * Math.cos(elev));
+  // Fade between sun and moon around dawn and dusk, while the light is dim.
+  const fromRise = h < 12 ? SUNRISE - h : h - SUNSET;
+  return out.lerp(MOON, clamp(fromRise / 0.8 + 0.5, 0, 1)).normalize();
+}
 
 interface SkyKey {
   readonly hour: number;
@@ -41,6 +72,13 @@ export interface Weather {
 
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
+  quality: Quality;
+  /** Direction the sunlight travels and the shadow map's axes, for snapping it to whole texels. */
+  private readonly sunDir = new THREE.Vector3(0, -1, 0);
+  private readonly lightRight = new THREE.Vector3();
+  private readonly lightUp = new THREE.Vector3();
+  private readonly snap = new THREE.Vector3();
+  private envTarget: THREE.WebGLRenderTarget | null = null;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 340);
   readonly fog = new THREE.Fog(0xe9d3a7, 70, 235);
@@ -58,17 +96,38 @@ export class Stage {
   private readonly tmpB = new THREE.Color();
   darkness = 0;
 
-  constructor(host: HTMLElement) {
+  constructor(host: HTMLElement, quality: Quality) {
+    this.quality = quality;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2));
+    this.renderer.setPixelRatio(this.pixelRatio());
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.id = 'view';
     this.renderer.domElement.setAttribute('aria-label', 'Wole Wole game view');
     host.prepend(this.renderer.domElement);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0xf1d9b0);
     this.sun.position.set(-30, 60, 20);
-    this.scene.add(this.hemi, this.sun);
+    this.scene.add(this.hemi, this.sun, this.sun.target);
+    // Sun shadows cover the road from just behind the bus to well ahead of it.
+    const shadowSize = TIERS[quality].shadow;
+    this.sun.castShadow = shadowSize > 0;
+    this.sun.shadow.mapSize.set(shadowSize || 1024, shadowSize || 1024);
+    const cam = this.sun.shadow.camera;
+    cam.left = -32;
+    cam.right = 32;
+    cam.top = 62;
+    cam.bottom = -62;
+    cam.near = 1;
+    cam.far = 320;
+    this.sun.shadow.bias = -0.0003;
+    this.sun.shadow.normalBias = 0.05;
+    this.sun.shadow.radius = 2;
+    // Vehicles share one physical material (paint, glass, rubber and chrome per vertex); it has no painted detail here.
+    setSurfaceDetail(false);
+    reflective(vehicleMaterial());
+    this.buildEnvironment();
+    setEnvironment(TIERS[quality].reflections ? (this.envTarget?.texture ?? null) : null);
     this.busLight.position.set(0, 1.4, -2.6);
     this.busLight.target.position.set(0, 0, -30);
 
@@ -111,6 +170,76 @@ export class Stage {
       body.add(front);
       this.skyline.add(body);
     }
+  }
+
+  /** First guess at a tier: phones start on Medium (small, low-core phones on Low), computers on High. */
+  static autoQuality(): Quality {
+    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    const small = Math.min(window.screen.width, window.screen.height) < 420 && (navigator.hardwareConcurrency ?? 8) <= 4;
+    return mobile ? (small ? 'low' : 'medium') : 'high';
+  }
+
+  private pixelRatio(): number {
+    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    return Math.min(window.devicePixelRatio || 1, TIERS[this.quality].pixels, mobile ? 1.5 : 2);
+  }
+
+  /** Switch graphics tier: resolution, sun shadows and reflections. */
+  setQuality(q: Quality): void {
+    if (q === this.quality) return;
+    this.quality = q;
+    const t = TIERS[q];
+    this.renderer.setPixelRatio(this.pixelRatio());
+    this.sun.castShadow = t.shadow > 0;
+    if (t.shadow > 0 && this.sun.shadow.mapSize.x !== t.shadow) {
+      this.sun.shadow.mapSize.set(t.shadow, t.shadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    setEnvironment(t.reflections ? (this.envTarget?.texture ?? null) : null);
+    this.resize();
+  }
+
+  /** A soft sky for paint and glass to reflect: blue overhead, warm haze at the horizon, dusty ground below. */
+  private buildEnvironment(): void {
+    const scene = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(100, 24, 12);
+    const pos = geo.getAttribute('position');
+    const colors = new Float32Array(pos.count * 3);
+    const top = new THREE.Color(0xa9cbe6);
+    const horizon = new THREE.Color(0xf1e2c0);
+    const ground = new THREE.Color(0x7d6e5a);
+    const c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) / 100;
+      if (y >= 0) c.lerpColors(horizon, top, Math.pow(y, 0.6));
+      else c.lerpColors(horizon, ground, Math.min(1, -y * 4));
+      colors.set([c.r, c.g, c.b], i * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const dome = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide }));
+    scene.add(dome);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envTarget = pmrem.fromScene(scene, 0.04);
+    pmrem.dispose();
+    geo.dispose();
+    (dome.material as THREE.Material).dispose();
+  }
+
+  /** Keep the sun's shadow map around the bus, snapped to whole shadow texels in the road's own frame. */
+  follow(dist: number, x: number): void {
+    const cam = this.sun.shadow.camera;
+    const texX = (cam.right - cam.left) / this.sun.shadow.mapSize.x;
+    const texY = (cam.top - cam.bottom) / this.sun.shadow.mapSize.y;
+    // In the road's frame z is −distance; snapping there keeps shadows of buildings and stalls still as they pass.
+    const t = this.snap.set(x * 0.6, 0, -dist - 34);
+    const a = t.dot(this.lightRight);
+    const b = t.dot(this.lightUp);
+    t.addScaledVector(this.lightRight, Math.round(a / texX) * texX - a);
+    t.addScaledVector(this.lightUp, Math.round(b / texY) * texY - b);
+    t.z += dist;
+    this.sun.target.position.copy(t);
+    this.sun.position.copy(t).addScaledVector(this.sunDir, -160);
   }
 
   resize(): void {
@@ -170,8 +299,16 @@ export class Stage {
     }
     this.fog.near = near;
     this.fog.far = far;
-    this.hemi.intensity = hemiI;
-    this.sun.intensity = sunI;
+    // By day, less sky fill and more direct sun: open ground stays about as bright, while shade and shadows read.
+    const day = 1 - this.darkness;
+    this.hemi.intensity = hemiI * (1 - 0.32 * day);
+    this.sun.intensity = sunI * (1 + 0.4 * day);
+    sunPosition(hr, sunAt);
+    this.sunDir.copy(sunAt).negate();
+    this.lightRight.crossVectors(this.sunDir, THREE.Object3D.DEFAULT_UP).normalize();
+    this.lightUp.crossVectors(this.lightRight, this.sunDir).normalize();
+    // Paint and glass reflect the sky by day; at night only a faint sheen is left.
+    setReflectionLevel(0.75 * (1 - this.darkness * 0.85) * (1 - weather.rain * 0.3));
     this.busLight.intensity = this.darkness * 60;
     setNightLevel(this.darkness);
     this.skyline.visible = onBridge;

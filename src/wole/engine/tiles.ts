@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { KERB_X, LANE_W, ROAD_W, TILE, laneX, type RouteDef, type StretchKind } from '../rules/data.ts';
 import { sideBlocked, stretchAt } from '../rules/route.ts';
 import { mod, pick, rand } from '../rules/util.ts';
+import { shade } from './compact.ts';
 import { lambert, night } from './materials.ts';
 import { BOX, PLANE, billboardMaterials, makeBillboard, makeLamp, makePalm, makeStall } from './models.ts';
 import {
@@ -79,9 +80,11 @@ class Surfaces {
   }
 }
 
+/** Flat ground: takes the sun's shadows but never casts any. */
 function strip(width: number, material: THREE.Material, x: number, y: number): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(width, TILE).rotateX(-Math.PI / 2), material);
   m.position.set(x, y, 0);
+  m.receiveShadow = true;
   return m;
 }
 
@@ -108,6 +111,7 @@ export class Tiles {
       const face = new THREE.Mesh(BOX, lambert(0x55524c));
       face.scale.set(0.06, 0.16, TILE);
       face.position.set(sign * (KERB_X + 0.03), 0.08, 0);
+      face.receiveShadow = true;
       land.add(face);
       land.add(strip(200, s.ground, sign * (KERB_X + 5 + 100), 0.0));
     }
@@ -121,6 +125,7 @@ export class Tiles {
     const deck = new THREE.Mesh(BOX, lambert(0x8f8a80));
     deck.scale.set(ROAD_W + 1.4, 1.2, TILE);
     deck.position.y = -0.62;
+    deck.receiveShadow = true;
     bridge.add(deck);
     for (const sign of [-1, 1] as const) {
       const rail = new THREE.Mesh(BOX, s.railing);
@@ -129,6 +134,8 @@ export class Tiles {
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 8, 10), lambert(0x7d786f));
       pillar.position.set(sign * (KERB_X - 1.5), -5, 0);
       const water = strip(320, s.water, sign * (KERB_X + 160), -8);
+      shade(rail, true, true);
+      shade(pillar, true, true);
       bridge.add(rail, pillar, water);
     }
 
@@ -143,6 +150,10 @@ export class Tiles {
         const body = new THREE.Mesh(BOX, lambert(0xe3d5b8));
         const front = new THREE.Mesh(PLANE, this.surf.facades[0]?.material ?? lambert(0xe3d5b8));
         const awning = new THREE.Mesh(BOX, this.surf.awnings[0] ?? lambert(0x1b998b));
+        // The block and its awning cast shadows across pavement and road; the painted front takes them.
+        shade(body, true, true);
+        shade(awning, true, true);
+        front.receiveShadow = true;
         g.add(body, front, awning);
         buildings.push({ group: g, body, front, awning });
       }

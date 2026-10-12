@@ -34,6 +34,8 @@ export interface TitleModel {
   readonly dailyBonus: string | null;
   readonly autoChange: boolean;
   readonly muted: boolean;
+  /** Graphics setting as shown, e.g. "Auto (Medium)". */
+  readonly graphics: string;
   /** Today's shift: route, your best so far, and a friend's challenge if a link brought one. */
   readonly shift: { readonly route: string; readonly date: string; readonly best: string | null };
   readonly challenge: string | null;
@@ -156,6 +158,7 @@ export interface ScreenActions {
   home(): void;
   toggleAuto(): void;
   toggleSound(): void;
+  toggleGraphics(): void;
   resume(): void;
   quit(): void;
   again(): void;
@@ -215,6 +218,9 @@ export class Screens {
             break;
           case 'sound':
             actions.toggleSound();
+            break;
+          case 'graphics':
+            actions.toggleGraphics();
             break;
           case 'resume':
             actions.resume();
@@ -305,6 +311,7 @@ export class Screens {
         <div class="row small">
           <button type="button" class="toggle" data-action="auto" aria-pressed="${m.autoChange}">Conductor gives change: ${m.autoChange ? 'On (no tips)' : 'Off'}</button>
           <button type="button" class="toggle" data-action="sound" aria-pressed="${!m.muted}">Sound: ${m.muted ? 'Off' : 'On'}</button>
+          <button type="button" class="toggle" data-action="graphics">Graphics: ${esc(m.graphics)}</button>
           ${m.best ? `<span class="badge">${esc(m.best)}</span>` : ''}
           <a class="toggle city-link" href="../">Drive London · West Road Life</a>
         </div>

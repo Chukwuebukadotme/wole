@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MODEL_SIZE, type ModelId, type Paint } from '../rules/cars.ts';
-import { basic, night } from './materials.ts';
+import { compact, shade } from './compact.ts';
+import { basic, night, reflective } from './materials.ts';
 import { box, contactShadow, makeCar, makeTruck } from './models.ts';
 // Low-poly vehicles from Kenney's Car Kit (CC0, see assets/cars/LICENSE-kenney.txt).
 import paletteUrl from '../assets/cars/colormap.png?url';
@@ -39,7 +40,7 @@ const FILES: Readonly<Record<FileModel, { url: string; paint: readonly [number, 
 
 const PALETTE_SIZE = 128;
 const templates = new Map<FileModel, THREE.Group>();
-const materials = new Map<string, THREE.MeshLambertMaterial>();
+const materials = new Map<string, THREE.MeshStandardMaterial>();
 let palette: HTMLImageElement | null = null;
 let loading: Promise<void> | null = null;
 
@@ -47,7 +48,7 @@ let loading: Promise<void> | null = null;
 export const carModelsReady = (): boolean => templates.size > 0;
 
 /** Palette texture with one square repainted. Small and without mipmaps, so squares never bleed together. */
-function paletteMaterial(model: FileModel, color: Paint): THREE.MeshLambertMaterial {
+function paletteMaterial(model: FileModel, color: Paint): THREE.MeshStandardMaterial {
   const [row, col] = FILES[model].paint;
   const key = color === null ? 'base' : `${row}:${col}:${color}`;
   let m = materials.get(key);
@@ -81,7 +82,8 @@ function paletteMaterial(model: FileModel, color: Paint): THREE.MeshLambertMater
   map.flipY = false;
   map.generateMipmaps = false;
   map.minFilter = THREE.LinearFilter;
-  m = new THREE.MeshLambertMaterial({ map });
+  // Painted bodywork with a soft sheen that picks up the sky.
+  m = reflective(new THREE.MeshStandardMaterial({ map, roughness: 0.42, metalness: 0.05 }));
   materials.set(key, m);
   return m;
 }
@@ -105,12 +107,19 @@ function normalise(source: THREE.Group, model: FileModel): THREE.Group {
   }
   inner.traverse((o) => {
     if (o instanceof THREE.Mesh) {
-      // Swap the kit's PBR material for the game's flat lit look; the palette image is loaded separately.
+      // Swap the kit's material for the game's own; the palette image is loaded separately.
       const old = o.material as THREE.MeshStandardMaterial;
       old.map?.dispose();
       old.dispose();
       o.material = paletteMaterial(model, null);
     }
+  });
+  // Road wheels spin and the front pair steer; a spare on the tailgate stays put.
+  inner.traverse((o) => {
+    if (!/^wheel-(front|back)-(left|right)/.test(o.name)) return;
+    o.userData.wheel = true;
+    o.userData.front = o.name.includes('front');
+    o.rotation.order = 'YXZ';
   });
   const g = new THREE.Group();
   g.add(inner, contactShadow(size.w, size.l));
@@ -120,14 +129,17 @@ function normalise(source: THREE.Group, model: FileModel): THREE.Group {
     // Race cars have no headlights, just a rain light under the rear wing.
     g.add(box(0.3, 0.12, 0.05, n.tail, 0, 0.42, -front - 0.15));
     if (FILES[model].electric) g.add(box(size.w * 0.6, 0.05, 0.05, basic(0x4fd1ff), 0, 0.3, front + 0.2));
-    return g;
+  } else {
+    const y = Math.min(0.9, Math.max(0.45, size.h * 0.38));
+    const hx = size.w * 0.3;
+    g.add(box(0.3, 0.13, 0.05, n.head, -hx, y, front), box(0.3, 0.13, 0.05, n.head, hx, y, front));
+    g.add(box(0.3, 0.14, 0.05, n.tail, -hx, y, -front), box(0.3, 0.14, 0.05, n.tail, hx, y, -front));
+    // Electric cars wear a thin blue light bar across the nose.
+    if (FILES[model].electric) g.add(box(size.w * 0.7, 0.06, 0.05, basic(0x4fd1ff), 0, y + 0.16, front - 0.01));
   }
-  const y = Math.min(0.9, Math.max(0.45, size.h * 0.38));
-  const hx = size.w * 0.3;
-  g.add(box(0.3, 0.13, 0.05, n.head, -hx, y, front), box(0.3, 0.13, 0.05, n.head, hx, y, front));
-  g.add(box(0.3, 0.14, 0.05, n.tail, -hx, y, -front), box(0.3, 0.14, 0.05, n.tail, hx, y, -front));
-  // Electric cars wear a thin blue light bar across the nose.
-  if (FILES[model].electric) g.add(box(size.w * 0.7, 0.06, 0.05, basic(0x4fd1ff), 0, y + 0.16, front - 0.01));
+  // Each pair of lamps becomes one mesh; the model itself is left as it came.
+  compact(g, 'vehicle', (o) => o === inner);
+  shade(g, true, true);
   return g;
 }
 
@@ -168,19 +180,17 @@ export function loadCarModels(): Promise<void> {
 /** A road vehicle in the given paint. Wheels are listed in `userData.wheels` for spinning. */
 export function makeVehicle(model: ModelId, color: Paint): THREE.Group {
   const template = model === 'lorry' ? undefined : templates.get(model);
-  if (!template) {
-    const g = model === 'lorry' || model === 'boxtruck' || model === 'refuse' ? makeTruck() : makeCar(color ?? undefined);
-    g.userData.wheels = [];
-    return g;
-  }
+  if (!template) return model === 'lorry' || model === 'boxtruck' || model === 'refuse' ? makeTruck() : makeCar(color ?? undefined);
   const g = template.clone(true);
   const paint = paletteMaterial(model as FileModel, color);
   const wheels: THREE.Object3D[] = [];
   g.traverse((o) => {
-    if (o.name.startsWith('wheel')) wheels.push(o);
-    // Palette meshes are the only ones with a texture; the light boxes keep their own materials.
-    if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshLambertMaterial && o.material.map) o.material = paint;
+    if (o.userData.wheel === true) wheels.push(o);
+    // Palette meshes are the only ones with a standard material; the light boxes keep their own materials.
+    if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial && o.material.map) o.material = paint;
   });
   g.userData.wheels = wheels;
+  // The models face +z inside their group, so their wheels turn forwards about x.
+  g.userData.spinRate = 1 / 0.36;
   return g;
 }

@@ -95,3 +95,10 @@ test('new players get the guided first run; players with runs behind them skip i
   assert.equal(parseSave({ guided: true }).guided, true);
   assert.deepEqual(parseSave({ tips: ['fuel', 7, 'warden'] }).tips, ['fuel', 'warden']);
 });
+
+test('the graphics setting is kept, and anything unknown falls back to Auto', () => {
+  assert.equal(defaultSave().settings.graphics, 'auto');
+  assert.equal(parseSave({ settings: { graphics: 'low' } }).settings.graphics, 'low');
+  assert.equal(parseSave({ settings: { graphics: 'ultra' } }).settings.graphics, 'auto');
+  assert.equal(parseSave({ settings: { muted: true } }).settings.graphics, 'auto');
+});

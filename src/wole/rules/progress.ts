@@ -22,6 +22,9 @@ export interface MissionState {
   readonly xp: number;
 }
 
+export type Graphics = 'auto' | 'high' | 'medium' | 'low';
+export const GRAPHICS: readonly Graphics[] = ['auto', 'high', 'medium', 'low'];
+
 export interface SaveData {
   version: 2;
   bank: number;
@@ -36,7 +39,8 @@ export interface SaveData {
   races: Record<string, { best: number; wins: number }>;
   race: string;
   daily: { lastDay: string; streak: number };
-  settings: { autoChange: boolean; muted: boolean };
+  /** Graphics tier; Auto starts from the device and steps down if frames run slow. */
+  settings: { autoChange: boolean; muted: boolean; graphics: Graphics };
   route: RouteId;
   seenHelp: boolean;
   /** The guided first pickup and drop-off is finished. */
@@ -63,7 +67,7 @@ export function defaultSave(): SaveData {
     races: {},
     race: 'ikorodu',
     daily: { lastDay: '', streak: 0 },
-    settings: { autoChange: false, muted: false },
+    settings: { autoChange: false, muted: false, graphics: 'auto' },
     route: 'ikorodu',
     seenHelp: false,
     guided: false,
@@ -147,7 +151,11 @@ export function parseSave(raw: unknown): SaveData {
     races,
     race: RACES.some((r) => r.id === race) ? race : 'ikorodu',
     daily: { lastDay: str(daily.lastDay, ''), streak: Math.max(0, num(daily.streak, 0)) },
-    settings: { autoChange: bool(settings.autoChange, false), muted: bool(settings.muted, false) },
+    settings: {
+      autoChange: bool(settings.autoChange, false),
+      muted: bool(settings.muted, false),
+      graphics: GRAPHICS.includes(settings.graphics as Graphics) ? (settings.graphics as Graphics) : 'auto',
+    },
     route: ROUTES.some((r) => r.id === route) ? (route as RouteId) : 'ikorodu',
     seenHelp: bool(raw.seenHelp, false),
     // Players who already drove before the guide existed skip it.

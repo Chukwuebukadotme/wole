@@ -26,12 +26,13 @@ London follows the *West Road Life* visual kit (London boards, fleet, environmen
 - **Light.** One sun with texel-snapped shadows near the player (stable as the road streams past), sky and ground fill light, sky reflections on vehicles, soft contact shadows under every vehicle, person and tree, and baked darkening where walls meet the pavement.
 - **Motion.** The drive runs in fixed 1/120 s steps, so braking distance and lane changes are the same at any frame rate. Lane changes are a critically damped spring limited by forward speed; the body pitches, rolls and bounces on springs above wheels that stay on the road; front wheels steer. People's legs and arms swing in the vertex shader, with stride matched to walking speed.
 - **Graphics tiers** (Settings → Graphics): High (desktop: 2× pixels, 2048 shadows, building shadows), Medium (phones: 1.5×, 1024 shadows), Low (1×, contact shadows only, no surface detail or reflections). Auto steps down if the frame rate stays low.
+- **Lagos (Wole Wole)** keeps its own look and adds the same realism: a sun that moves with the game clock (rising on the right of the road, setting on the left) and casts texel-snapped shadows; vehicle bodies, glass, tyres and chrome on the shared physical material with sky reflections that fade at night; plain-coloured parts merged per model (about half the draw calls of before, shadow pass included); the bus on pitch, roll and bounce springs in fixed 1/120 s steps, a smoother lane-change spring, steering front wheels, and traffic that eases between lanes; passengers who crowd to the door as the danfo pulls in, step up into it, or step down and walk away. Graphics (Auto/High/Medium/Low) is a toggle on its title screen; `src/wole/rules/motion.ts` holds the tested step and spring code.
 
 ## Code
 
 ```
 src/config/   cities, areas, stops and vehicles
-src/rules/    money, saves (with Wole Wole migration), daily drive, challenge links, advice — unit tested
+src/rules/    money, saves, daily drive, challenge links, advice — unit tested
 src/art/      rounded-part kit, vehicles, people, buildings, props, landmarks, textures
 src/world/    renderer and sky, road layout, street streaming, instanced pools
 src/game/     the drive, traffic, crowd, player vehicle, camera

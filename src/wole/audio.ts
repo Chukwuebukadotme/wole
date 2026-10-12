@@ -259,6 +259,11 @@ export class SoundBoard {
   changeBad(): void {
     this.tone(330, 0.25, { type: 'sawtooth', gain: 0.07, to: 200 });
   }
+  /** Air brakes: a short hiss when the danfo starts braking at speed. */
+  brake(): void {
+    this.noise(0.45, 0.05, 2400);
+  }
+
   hop(): void {
     this.tone(300, 0.18, { type: 'triangle', gain: 0.12, to: 540 });
   }

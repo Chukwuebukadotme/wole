@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { KERB_X, LANES, LANE_W, ROAD_W, TUNING, laneX, KERB } from '../rules/data.ts';
+import { compact, shade } from './compact.ts';
 import { lambert } from './materials.ts';
 import { BOX, PLANE, box, makeFigure, makeLamp } from './models.ts';
 import { bayTexture, cameraSignTexture, chequerTexture, nameTagTexture, plateTexture, raceBannerTexture, stationSignTexture, stopLineTexture, tollSignTexture } from './textures.ts';
@@ -58,6 +59,8 @@ export function makeStop(name: string): { group: THREE.Group; plate: THREE.Mesh 
   plate.scale.set(2.4, 0.82, 1);
   plate.position.set(KERB_X + 0.75, 3.1, -12.94);
   g.add(plate);
+  compact(g, 'world', (o) => o === plate);
+  shade(g, true, true);
   return { group: g, plate };
 }
 
@@ -89,6 +92,8 @@ export function makeStation(price: number): THREE.Group {
   const attendant = makeFigure('worker');
   attendant.position.set(KERB_X + 5.6, 0.16, 2);
   g.add(attendant);
+  compact(g, 'world');
+  shade(g, true, true);
   return g;
 }
 
@@ -130,6 +135,8 @@ export function makeJunction(): JunctionVisual {
     g.add(lamp);
   }
   const arm = (warden.userData.arm as THREE.Group | undefined) ?? null;
+  compact(g, 'world', (o) => o === warden || o === signal);
+  shade(g, true, true);
   return { group: g, warden, arm, signal };
 }
 
@@ -161,9 +168,12 @@ export function makeToll(): TollVisual {
     bar.position.x = (LANE_W - 0.6) / 2;
     const white = box(0.5, 0.15, 0.15, 0xfafafa, (LANE_W - 0.6) / 2, 0, 0);
     pivot.add(bar, white);
+    compact(pivot, 'world');
     g.add(pivot);
     arms.push(pivot);
   }
+  compact(g, 'world', (o) => arms.includes(o as THREE.Group));
+  shade(g, true, true);
   return { group: g, arms };
 }
 
@@ -176,6 +186,8 @@ export function makeBrtCamera(): THREE.Group {
   sign.scale.set(1.8, 0.9, 1);
   sign.position.set(-(KERB_X + 1.2), 3.6, 0.1);
   g.add(sign);
+  compact(g, 'world');
+  shade(g, true, true);
   return g;
 }
 
@@ -192,6 +204,8 @@ export function makeRaceGate(word: 'START' | 'FINISH'): THREE.Group {
   const line = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 1.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: chequerTexture(), transparent: true, depthWrite: false }));
   line.position.y = 0.025;
   g.add(line);
+  compact(g, 'world');
+  shade(g, true, true);
   return g;
 }
 
