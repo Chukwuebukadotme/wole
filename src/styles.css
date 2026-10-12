@@ -335,6 +335,24 @@ button {
   color: var(--yellow);
   white-space: nowrap;
 }
+.lagos-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 14px;
+  border-radius: 12px;
+  background: #f6b800;
+  color: #141414;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  box-shadow: 0 3px 0 #141414;
+}
+.lagos-link .disp {
+  font-size: 15px;
+}
 .challenge {
   background: var(--cream);
   border-radius: 14px;

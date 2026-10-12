@@ -6,7 +6,7 @@ import { Streets } from '../world/streets.ts';
 
 export function startStreetView(host: HTMLElement): void {
   const params = new URLSearchParams(window.location.search);
-  const city = (params.get('city') === 'lagos' ? 'lagos' : 'london') as CityId;
+  const city: CityId = 'london';
   const area = areaById(city, params.get('area') ?? '');
   document.getElementById('loading')?.setAttribute('hidden', '');
   const stage = new Stage(host);
@@ -16,7 +16,7 @@ export function startStreetView(host: HTMLElement): void {
   const layout = new Layout(area, 0, params.get('mode') === 'endless');
   let dist = Number(params.get('d') ?? 0);
   const speed = Number(params.get('v') ?? 0);
-  const x = Number(params.get('x') ?? (city === 'london' ? -3.4 : 3.4));
+  const x = Number(params.get('x') ?? -3.4);
   const high = params.has('high');
   streets.start(layout, dist);
   (window as unknown as { __street?: unknown }).__street = { streets, stage, set: (d: number) => (dist = d) };

@@ -132,7 +132,7 @@ export class Traffic {
       }
     }
     const kerbLane = this.side < 0 ? 0 : 2;
-    const big = model === 'doubledecker' || model === 'brt' || model === 'keke';
+    const big = model === 'doubledecker';
     let lane = Math.floor(rng() * 3);
     if (big && rng() < 0.7) lane = kerbLane;
     // Leave room: no two cars side by side in all three lanes.
@@ -149,7 +149,7 @@ export class Traffic {
     const look = Math.floor(rng() * 3);
     const { key, geo } = this.geometry(model, paint, look);
     const size = MODEL_SIZE[model];
-    const cruise = this.laneSpeed(lane, env, rng) * (model === 'motorbike' || model === 'okada' ? 1.25 : big ? 0.82 : 1);
+    const cruise = this.laneSpeed(lane, env, rng) * (model === 'motorbike' ? 1.25 : big ? 0.82 : 1);
     const mesh = this.acquire(key, geo);
     this.cars.push({ model, key, mesh, w: size.w, l: size.l, d, x: LANES[lane] ?? 0, lane, v: cruise, cruise, laneT: 2 + rng() * 6, flung: null, passed: false });
   }
@@ -212,7 +212,7 @@ export class Traffic {
     if (c.laneT <= 0) {
       c.laneT = 4 + Math.random() * 7;
       const blocked = ahead && ahead.d - c.d < 26;
-      const bike = c.model === 'motorbike' || c.model === 'okada';
+      const bike = c.model === 'motorbike';
       if (blocked || bike || Math.random() < 0.25) {
         const options = [c.lane - 1, c.lane + 1].filter((ln) => ln >= 0 && ln <= 2 && this.laneFree(c, ln, env));
         if (options.length) c.lane = pick(options);

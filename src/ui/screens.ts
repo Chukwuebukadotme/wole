@@ -65,6 +65,7 @@ export function homeHtml(m: HomeModel): string {
     <button type="button" class="place" data-action="setup">${esc(m.place)}</button>
     <div class="extras">
       ${m.challenge ? `<div class="challenge"><p>${esc(m.challenge.text)}</p><button type="button" class="btn small disp" data-action="challenge">Beat it</button></div>` : ''}
+      <button type="button" class="lagos-link" data-action="lagos"><span class="disp">Lagos</span><span>Drive a danfo in Wole Wole</span></button>
       ${m.daily && !m.challenge ? `<button type="button" class="daily" data-action="daily"><span><b class="tag disp">Today’s drive</b><br>${esc(m.daily.label)}</span><span class="best">${m.daily.best ? `Best ${esc(m.daily.best)}` : 'Same road for all'}</span></button>` : ''}
     </div>
     <div class="spacer"></div>
@@ -92,6 +93,7 @@ export function setupHtml(m: SetupModel): string {
       <h3>Game mode</h3>
       ${seg('mode', [['route', 'Route'], ['endless', 'Endless']], m.mode, 'Game mode')}
       <p class="muted" style="margin-top:14px">${m.mode === 'route' ? 'A destination to complete.' : 'Keep driving until the damage limit.'}<br>Switch modes whenever you want.</p>
+      <p class="muted" style="margin-top:10px;font-size:13px">Lagos opens Wole Wole, the danfo game, with its own routes and progress.</p>
     </div>
     <div class="bottom-actions"><button type="button" class="btn disp" data-action="back" data-focus>Continue</button></div>
   </section>`;

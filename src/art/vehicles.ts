@@ -302,7 +302,6 @@ const HATCH: Profile = { key: 'hatch', l: 3.8, w: 1.7, c: 0.3, nose: 0.8, belt: 
 const SEDAN: Profile = { key: 'sedan', l: 4.4, w: 1.8, c: 0.3, nose: 0.72, belt: 0.9, screen: -0.88, roofFront: [-0.18, 1.46], roofRear: [0.86, 1.46], rearBase: 1.48, tail: 0.92, axles: [-1.42, 1.42], wheelR: 0.37, wheelW: 0.26, house: 0.86, pillars: [0.35] };
 const CAB: Profile = { key: 'cab', l: 4.5, w: 1.9, c: 0.32, nose: 0.92, belt: 1.08, screen: -1.02, roofFront: [-0.72, 1.8], roofRear: [1.82, 1.8], rearBase: 2.04, tail: 1.12, axles: [-1.42, 1.45], wheelR: 0.4, wheelW: 0.28, house: 0.9, pillars: [0.12, 1.15] };
 const SUV: Profile = { key: 'suv', l: 4.7, w: 2, c: 0.42, nose: 1.02, belt: 1.2, screen: -1.2, roofFront: [-0.55, 1.9], roofRear: [2.08, 1.9], rearBase: 2.28, tail: 1.24, axles: [-1.55, 1.55], wheelR: 0.44, wheelW: 0.3, house: 0.9, pillars: [0.3, 1.38] };
-const DANFO: Profile = { key: 'danfo', l: 4.7, w: 2, c: 0.36, nose: 1.4, belt: 1.45, screen: -2.32, roofFront: [-2.02, 2.4], roofRear: [2.3, 2.4], rearBase: 2.35, tail: 1.45, axles: [-1.55, 1.6], wheelR: 0.4, wheelW: 0.28, house: 0.96, pillars: [-1.1, -0.15, 0.82, 1.72] };
 const VAN: Profile = { key: 'van', l: 5.2, w: 2, c: 0.38, nose: 1.0, belt: 1.24, screen: -1.95, roofFront: [-1.32, 2.4], roofRear: [2.55, 2.4], rearBase: 2.6, tail: 1.24, axles: [-1.7, 1.75], wheelR: 0.4, wheelW: 0.28, house: 0.98, pillars: [-0.95] };
 
 function blackcab(p: Paint, side: -1 | 1): VehicleParts {
@@ -322,19 +321,9 @@ function hatchback(p: Paint, side: -1 | 1): VehicleParts {
   return { body: s, wheels, door, sticker: null };
 }
 
-function sedan(p: Paint, side: -1 | 1, taxi = false): VehicleParts {
+function sedan(p: Paint, side: -1 | 1): VehicleParts {
   const { s, wheels, door } = profileBody(SEDAN, p, side);
   carFace(s, SEDAN, p, 'wide');
-  if (taxi) {
-    // Lagos taxi: black-and-white check band along each side and a roof sign.
-    for (let i = 0; i < 9; i++) {
-      const z = -1.6 + i * 0.4;
-      s.pair(G.box(0.03, 0.11, 0.2), i % 2 ? C.white : DARK, { x: 0.915, y: 0.74, z });
-      s.pair(G.box(0.03, 0.11, 0.2), i % 2 ? DARK : C.white, { x: 0.915, y: 0.63, z });
-    }
-    s.add(G.rbox(0.6, 0.18, 0.28, 0.05), C.white, { y: 1.58, z: 0.34 });
-    s.add(G.rbox(0.62, 0.05, 0.3, 0.02), DARK, { y: 1.55, z: 0.34 });
-  }
   return { body: s, wheels, door, sticker: null };
 }
 
@@ -372,85 +361,11 @@ function bike(p: Paint, jacket: number, trousers: number, helmet: number, skin: 
   return { body: s, wheels, door: null, sticker: null };
 }
 
-function danfo(p: Paint, side: -1 | 1): VehicleParts {
-  const { s, wheels } = profileBody(DANFO, p, side);
-  const hl = DANFO.l / 2;
-  // The danfo's two bold navy stripes, all the way round.
-  s.add(G.rbox(2.04, 0.15, 4.74, 0.06), p.accent, { y: 1.1 });
-  s.add(G.rbox(2.04, 0.08, 4.74, 0.04), p.accent, { y: 0.88 });
-  headlight(s, 0.68, 0.98, -hl - 0.06, 0.15);
-  headlight(s, -0.68, 0.98, -hl - 0.06, 0.15);
-  s.add(G.rbox(0.9, 0.16, 0.05, 0.04), DARK, { y: 0.74, z: -hl - 0.06 });
-  s.add(G.rbox(1.96, 0.24, 0.22, 0.09), DARK, { y: 0.5, z: -hl - 0.04 });
-  s.pair(G.rbox(0.18, 0.44, 0.06, 0.05), C.tail, { x: 0.82, y: 1.02, z: hl + 0.06 });
-  s.add(G.rbox(1.96, 0.24, 0.22, 0.09), DARK, { y: 0.5, z: hl + 0.04 });
-  s.add(G.rbox(0.5, 0.15, 0.04, 0.02), C.white, { y: 0.72, z: hl + 0.08 });
-  mirrorPair(s, 1.1, 1.62, -hl + 0.2, DARK);
-  // Sliding side door on the kerb side, under the first windows.
-  const door = new Shape();
-  door.add(G.rbox(0.06, 1.3, 1.02, 0.05), shade(p.body, 0.95));
-  door.add(G.rbox(0.07, 0.52, 0.84, 0.04), C.glass, { y: 0.36 });
-  door.add(G.rbox(0.07, 0.15, 1.02, 0.03), p.accent, { y: -0.3 });
-  return { body: s, wheels, door: { shape: door, kind: 'slide', x: side * 1.02, y: 1.4, z: -1.15, side }, sticker: { y: 1.62, z: hl + 0.09, w: 1.5, h: 0.2 } };
-}
-
-function keke(p: Paint): VehicleParts {
-  const s = new Shape();
-  s.add(G.rbox(1.36, 0.64, 1.6, 0.2), p.body, { y: 0.66, z: 0.42 });
-  s.add(G.rbox(1.38, 0.09, 1.62, 0.03), p.accent, { y: 0.86, z: 0.42 });
-  s.add(G.rbox(0.56, 0.74, 0.95, 0.22), p.body, { y: 0.74, z: -0.82 });
-  s.add(G.rbox(1.3, 0.08, 2.3, 0.03), DARK, { y: 0.34 });
-  s.add(G.rbox(1.44, 0.1, 2.2, 0.05), p.accent, { y: 1.8, z: -0.05 });
-  s.pair(G.rbox(0.05, 0.3, 1.5, 0.03), p.accent, { x: 0.71, y: 1.62, z: 0.36 });
-  for (const [x, z] of [[0.66, 0.98], [0.62, -0.55]] as const) s.pair(G.cyl(0.03, 0.03, 1.05, 8), DARK, { x, y: 1.28, z });
-  s.add(G.cyl(0.03, 0.03, 0.7, 8), DARK, { y: 1.42, z: -1.06 });
-  s.add(G.rbox(1.0, 0.56, 0.04, 0.04), C.glass, { y: 1.38, z: -0.98, rx: -0.15 });
-  s.add(G.rbox(1.36, 0.56, 0.06, 0.05), p.body, { y: 1.18, z: 1.2 });
-  s.add(G.rbox(0.8, 0.3, 0.04, 0.03), C.glass, { y: 1.3, z: 1.24 });
-  s.add(G.rbox(1.2, 0.18, 0.5, 0.06), 0x3a3f48, { y: 0.98, z: 0.72 });
-  s.add(G.rbox(1.2, 0.42, 0.1, 0.05), 0x3a3f48, { y: 1.2, z: 0.98 });
-  s.add(G.rbox(0.42, 0.12, 0.36, 0.05), 0x3a3f48, { y: 0.98, z: -0.32 });
-  s.add(G.cyl(0.025, 0.025, 0.62, 8), DARK, { y: 1.14, z: -0.74, rz: Math.PI / 2 });
-  headlight(s, 0, 0.96, -1.3, 0.09);
-  s.pair(G.rbox(0.14, 0.12, 0.04, 0.02), C.tail, { x: 0.55, y: 0.78, z: 1.23 });
-  const wheels: WheelSpot[] = [
-    { x: 0, z: -1.05, r: 0.3, w: 0.16 },
-    { x: 0.62, z: 0.78, r: 0.3, w: 0.18 },
-    { x: -0.62, z: 0.78, r: 0.3, w: 0.18 },
-  ];
-  return { body: s, wheels, door: null, sticker: null };
-}
-
 function van(p: Paint): VehicleParts {
   const { s, wheels } = profileBody(VAN, p, 1);
   carFace(s, VAN, p, 'wide');
   s.add(G.rbox(2.02, 0.12, 3.9, 0.04), p.accent, { y: 1.0, z: 0.6 });
   s.add(G.box(0.03, 1.6, 0.02), shade(p.body, 0.8), { y: 1.5, z: 2.63 });
-  return { body: s, wheels, door: null, sticker: null };
-}
-
-function brt(): VehicleParts {
-  const s = new Shape();
-  const blue = 0x2b62c8;
-  s.add(G.rbox(2.55, 2.8, 12, 0.3, 3), blue, { y: 0.42 + 1.4 });
-  s.add(G.rbox(2.58, 0.18, 12.02, 0.06), C.white, { y: 1.1 });
-  s.add(G.rbox(2.58, 0.12, 12.02, 0.05), C.yellow, { y: 0.92 });
-  s.pair(G.rbox(0.06, 0.95, 10.6, 0.05), C.glass, { x: 1.27, y: 2.25, z: 0.3 });
-  for (let z = -4.6; z <= 5; z += 1.6) s.pair(G.rbox(0.07, 0.97, 0.12, 0.03), blue, { x: 1.28, y: 2.25, z });
-  s.add(G.rbox(2.2, 1.2, 0.06, 0.06), C.glass, { y: 2.1, z: -6.0 });
-  s.add(G.rbox(2.1, 0.9, 0.06, 0.06), C.glass, { y: 2.25, z: 6.0 });
-  s.pair(G.rbox(0.2, 0.5, 0.06, 0.05), C.tail, { x: 1.05, y: 1.0, z: 6.02 });
-  headlight(s, 0.9, 0.95, -6.03, 0.15);
-  headlight(s, -0.9, 0.95, -6.03, 0.15);
-  s.add(G.rbox(2.45, 0.3, 0.2, 0.08), DARK, { y: 0.56, z: 5.98 });
-  s.add(G.rbox(2.45, 0.3, 0.2, 0.08), DARK, { y: 0.56, z: -5.98 });
-  const wheels: WheelSpot[] = [
-    { x: 1.1, z: -4.2, r: 0.52, w: 0.36 },
-    { x: -1.1, z: -4.2, r: 0.52, w: 0.36 },
-    { x: 1.1, z: 3.9, r: 0.52, w: 0.36 },
-    { x: -1.1, z: 3.9, r: 0.52, w: 0.36 },
-  ];
-  arches(s, wheels, 1.27, 0.08);
   return { body: s, wheels, door: null, sticker: null };
 }
 
@@ -473,22 +388,12 @@ export function vehicleParts(id: ModelId, paint: Paint, side: -1 | 1, look = 0):
       return hatchback(paint, side);
     case 'sedan':
       return sedan(paint, side);
-    case 'taxi':
-      return sedan(paint, side, true);
     case 'suv':
       return suv(paint, side);
     case 'motorbike':
       return bike(paint, paint.accent, rider?.trousers ?? 0x1d2a44, paint.body, skin);
-    case 'okada':
-      return bike(paint, rider?.jacket ?? 0x2a8a5a, rider?.trousers ?? 0x1d2a44, rider?.helmet ?? 0x23262d, skin);
-    case 'danfo':
-      return danfo(paint, side);
-    case 'keke':
-      return keke(paint);
     case 'van':
       return van(paint);
-    case 'brt':
-      return brt();
   }
 }
 

@@ -15,10 +15,7 @@ interface Palette {
 
 const PALETTES: Readonly<Record<CityId, Palette>> = {
   london: { top: 0x2f8fe0, horizon: 0xcde7f6, fog: 0xd3e6f1, hemiSky: 0xe4f2ff, hemiGround: 0x8c7d68, sun: 0xfff3df },
-  lagos: { top: 0x3399e2, horizon: 0xe3ecee, fog: 0xe2e7e2, hemiSky: 0xfff6e4, hemiGround: 0x8f7a5e, sun: 0xffefd2 },
 };
-/** Harmattan dust from the Sahara softens Lagos from November to February. */
-const HARMATTAN: Palette = { top: 0x7ab0d8, horizon: 0xe9d9b8, fog: 0xe6d6b4, hemiSky: 0xfff0d8, hemiGround: 0x8f7a5e, sun: 0xffe2b8 };
 
 export type Quality = 'high' | 'low';
 
@@ -150,8 +147,8 @@ export class Stage {
   }
 
   /** Sky, fog and light colours for a city. */
-  setCity(city: CityId, harmattan: boolean): void {
-    const p = city === 'lagos' && harmattan ? HARMATTAN : PALETTES[city];
+  setCity(city: CityId, harmattan = false): void {
+    const p = PALETTES[city];
     this.skyUniforms.top.value.setHex(p.top);
     this.skyUniforms.horizon.value.setHex(p.horizon);
     this.fog.color.setHex(p.fog);

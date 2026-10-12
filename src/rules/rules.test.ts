@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CITIES, LAGOS, LONDON, areaById, stretchAt } from '../config/cities.ts';
+import { CITIES, LONDON, areaById, stretchAt } from '../config/cities.ts';
 import { FLEETS, MODEL_SIZE, VEHICLES } from '../config/vehicles.ts';
 import { distanceText, drivePay, fareFor, money, perfectTip } from './money.ts';
-import { bestKey, defaultSave, migrateWole, parseSave } from './save.ts';
-import { dailyDrive, dayKey, decodeChallenge, driveAdvice, encodeChallenge, shortDate } from './social.ts';
+import { bestKey, defaultSave, parseSave } from './save.ts';
+import { dailyDrive, dayKey, decodeChallenge, driveAdvice, encodeChallenge, isWoleChallenge, shortDate } from './social.ts';
 
-test('money reads in each city’s currency and steps', () => {
+test('money reads in pounds', () => {
   assert.equal(money(LONDON.economy, 1240.4), '£1,240');
-  assert.equal(money(LAGOS.economy, 12_520), '₦12,500');
-  assert.equal(money(LAGOS.economy, 12_530), '₦12,550');
+  assert.equal(money(LONDON.economy, -3), '−£3');
   assert.equal(distanceText(850), '850 m');
   assert.equal(distanceText(2430), '2.4 km');
 });
@@ -25,8 +24,7 @@ test('driving pays by distance, more when faster, nothing when stopped', () => {
 test('fares grow with stops ridden and the vehicle’s fare rate, in money steps', () => {
   assert.equal(fareFor(LONDON.economy, 2, 1), 9);
   assert.equal(fareFor(LONDON.economy, 2, 3), 27);
-  assert.equal(fareFor(LAGOS.economy, 1, 1) % 50, 0);
-  assert.equal(perfectTip(LAGOS.economy, 300), 100);
+  assert.equal(perfectTip(LONDON.economy, 30), 8);
   assert.equal(perfectTip(LONDON.economy, 1), 1);
 });
 
@@ -47,10 +45,10 @@ test('every area is well formed: stretches cover it, stops sit on streets with r
       for (const lm of area.landmarks) if (lm.kind === 'tower-bridge') assert.equal(stretchAt(area, lm.at).theme, 'london-bridge');
     }
   }
-  assert.equal(areaById('lagos', 'nope').id, 'marina');
+  assert.equal(areaById('london', 'nope').id, 'river-run');
 });
 
-test('each city has a full fleet of six with sensible stats', () => {
+test('London has a full fleet of six with sensible stats', () => {
   for (const city of CITIES) {
     assert.equal(FLEETS[city.id].length, 6);
     for (const id of FLEETS[city.id]) {
@@ -62,8 +60,8 @@ test('each city has a full fleet of six with sensible stats', () => {
 });
 
 test('saves survive a round trip and damaged fields fall back', () => {
-  const s = defaultSave('lagos');
-  s.cities.lagos.bank = 25_000;
+  const s = defaultSave();
+  s.cities.london.bank = 25_000;
   s.cities.london.vehicle = 'blackcab';
   s.bests[bestKey('london', 'wapping', 'route')] = 410;
   const back = parseSave(JSON.parse(JSON.stringify(s)));
@@ -77,40 +75,32 @@ test('saves survive a round trip and damaged fields fall back', () => {
   assert.deepEqual(junk.bests, {});
 });
 
-test('Wole Wole progress moves into Lagos', () => {
-  const s = migrateWole({ bank: 18_000, best: { cash: 9_500, dist: 4200 }, name: 'Tunde', stats: { runs: 3, delivered: 40, metres: 9000 }, settings: { muted: true } });
-  assert.ok(s);
-  assert.equal(s.city, 'lagos');
-  assert.equal(s.cities.lagos.bank, 18_000);
-  assert.equal(s.cities.lagos.best, 9_500);
-  assert.equal(s.name, 'Tunde');
-  assert.equal(s.tutorialDone, true);
-  assert.equal(s.settings.music, 0);
-  assert.equal(migrateWole('nonsense'), null);
-});
-
 test('the daily drive is the same for everyone on a day and changes between days', () => {
   assert.deepEqual(dailyDrive('2026-10-11'), dailyDrive('2026-10-11'));
   const days = Array.from({ length: 14 }, (_, i) => dailyDrive(`2026-10-${String(i + 10).padStart(2, '0')}`));
   assert.ok(new Set(days.map((d) => d.seed)).size === 14);
-  assert.ok(new Set(days.map((d) => d.city)).size === 2, 'both cities come up within two weeks');
+  assert.ok(new Set(days.map((d) => d.area)).size >= 2, 'the area changes from day to day');
   for (const d of days) assert.ok(FLEETS[d.city].includes(d.vehicle) && areaById(d.city, d.area).id === d.area);
   assert.equal(dayKey(new Date('2026-10-11T23:30:00Z')), '2026-10-12');
   assert.equal(shortDate('2026-10-11'), '11 Oct');
 });
 
 test('challenge links survive a round trip and reject junk or old links', () => {
-  const c = { city: 'lagos', area: 'ikeja', mode: 'endless', passengers: false, vehicle: 'keke', seed: 3_000_000_000, score: 18_000, name: 'Adé Ọlá', day: null } as const;
+  const c = { city: 'london', area: 'wapping', mode: 'endless', passengers: false, vehicle: 'blackcab', seed: 3_000_000_000, score: 640, name: 'Adé Ọlá', day: null } as const;
   assert.deepEqual(decodeChallenge(encodeChallenge(c)), c);
   assert.match(encodeChallenge(c), /^[A-Za-z0-9_-]+$/);
   assert.deepEqual(decodeChallenge(encodeChallenge({ ...c, day: '2026-10-11' }))?.day, '2026-10-11');
   assert.equal(decodeChallenge(encodeChallenge({ ...c, name: '<b>' }))?.name, 'b');
   assert.equal(decodeChallenge(null), null);
   assert.equal(decodeChallenge('not-base64!!'), null);
-  // A Wole Wole daily-shift link.
-  assert.equal(decodeChallenge('eyJkIjoiMjAyNi0xMC0xMSIsInMiOjE4NTAsIm4iOiJUdW5kZSJ9'), null);
-  // A vehicle from the other city's fleet.
-  assert.equal(decodeChallenge(encodeChallenge({ ...c, vehicle: 'blackcab' as 'keke' })), null);
+  // A Wole Wole daily-shift link is not a London challenge, but is recognised so it can go to /lagos/.
+  const wole = 'eyJkIjoiMjAyNi0xMC0xMSIsInMiOjE4NTAsIm4iOiJUdW5kZSJ9';
+  assert.equal(decodeChallenge(wole), null);
+  assert.equal(isWoleChallenge(wole), true);
+  assert.equal(isWoleChallenge(encodeChallenge(c)), false);
+  assert.equal(isWoleChallenge('junk'), false);
+  // A vehicle that is not in the London fleet.
+  assert.equal(decodeChallenge(encodeChallenge({ ...c, vehicle: 'danfo' as 'blackcab' })), null);
 });
 
 test('advice points at the most useful thing first', () => {

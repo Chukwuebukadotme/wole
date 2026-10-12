@@ -13,7 +13,7 @@ export function hashString(text: string): number {
   return h >>> 0;
 }
 
-/** Calendar day in West Africa Time (an hour ahead of London), e.g. "2026-10-11". */
+/** Calendar day in West Africa Time (an hour ahead of London, matching Wole Wole's daily shift), e.g. "2026-10-11". */
 export const dayKey = (now: Date): string => new Date(now.getTime() + 60 * 60 * 1000).toISOString().slice(0, 10);
 
 /** "11 Oct" from "2026-10-11". */
@@ -32,7 +32,7 @@ export interface DailyDrive {
   readonly seed: number;
 }
 
-/** Today's drive: city, area and vehicle are picked from the date, so everyone drives the same thing. */
+/** Today's London drive: area and vehicle are picked from the date, so everyone drives the same thing. */
 export function dailyDrive(day: string): DailyDrive {
   const seed = hashString(`west-road-life:${day}`);
   const city = CITIES[seed % CITIES.length] ?? CITIES[0];
@@ -102,6 +102,19 @@ export function decodeChallenge(code: string | null): Challenge | null {
     return { city: city.id, area: area.id, mode: o.m === 'e' ? 'endless' : 'route', passengers: o.p !== 0, vehicle, seed: o.r, score: Math.round(o.s), name: name || 'A friend', day };
   } catch {
     return null;
+  }
+}
+
+/** True for a challenge link made by Wole Wole (Lagos), which now lives at /lagos/. */
+export function isWoleChallenge(code: string | null): boolean {
+  if (!code || code.length > 400) return false;
+  try {
+    const raw: unknown = JSON.parse(fromBase64(code.replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof raw !== 'object' || raw === null) return false;
+    const o = raw as Record<string, unknown>;
+    return o.v === undefined && typeof o.d === 'string' && typeof o.s === 'number';
+  } catch {
+    return false;
   }
 }
 

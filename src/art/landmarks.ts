@@ -1,5 +1,4 @@
-// Set pieces: Tower Bridge (the road passes through its towers) and the Lagos Island cathedral,
-// plus far-away skylines that stay on the horizon.
+// Set piece: Tower Bridge (the road passes through its towers), plus a far-away skyline that stays on the horizon.
 import * as THREE from 'three';
 import type { CityId } from '../config/cities.ts';
 import { mulberry32, pick } from '../rules/util.ts';
@@ -107,52 +106,12 @@ export function towerBridge(): Shape {
   return s;
 }
 
-/** Grey Gothic cathedral with a clock tower, facing +Z. */
-export function cathedral(): Shape {
-  const s = new Shape();
-  const grey = 0xbfc0c4;
-  const greyDark = 0xa7a9ae;
-  const slate = 0x3e4a62;
-  // Nave with a steep roof.
-  s.add(G.rbox(14, 14, 32, 0.2), grey, { y: 7, z: -24 });
-  s.add(G.rbox(10.6, 0.5, 33, 0.1), slate, { x: -3.6, y: 17, z: -24, rz: 0.72 });
-  s.add(G.rbox(10.6, 0.5, 33, 0.1), slate, { x: 3.6, y: 17, z: -24, rz: -0.72 });
-  for (let z = -36; z <= -12; z += 4.8)
-    for (const x of [-7.05, 7.05]) {
-      s.add(G.box(0.1, 5, 1.4), C.glass, { x, y: 6.5, z });
-      s.add(G.cone(0.7, 1.4, 3), C.glass, { x, y: 9.6, z, ry: Math.PI / 2, sz: 0.1 });
-      s.add(G.rbox(0.8, 12, 0.9, 0.1), greyDark, { x: x * 1.05, y: 6, z: z + 2.4 });
-    }
-  // Clock tower at the front.
-  s.add(G.rbox(9, 34, 9, 0.2), grey, { y: 17, z: -4 });
-  for (let y = 6; y < 33; y += 6.5) s.add(G.rbox(9.3, 0.4, 9.3, 0.08), greyDark, { y, z: -4 });
-  s.add(G.box(2.4, 6, 0.1), C.glass, { y: 5, z: 0.52 });
-  s.add(G.cone(1.2, 2.2, 3), C.glass, { y: 8.9, z: 0.52, sz: 0.08 });
-  for (const [x, z, ry] of [[0, 0.55, 0], [4.55, -4, Math.PI / 2], [-4.55, -4, Math.PI / 2], [0, -8.55, 0]] as const) {
-    s.add(G.cyl(1.7, 1.7, 0.2, 18), C.cream, { x, y: 26, z, rx: Math.PI / 2, rz: ry });
-    s.add(G.box(0.14, 1.2, 0.1), C.ink, { x: x + (ry ? 0 : 0), y: 26.5, z: z + (z > -4 ? 0.12 : -0.12) });
-    s.add(G.box(0.9, 0.14, 0.1), C.ink, { x: x + (ry ? 0 : 0.4), y: 26, z: z + (z > -4 ? 0.12 : -0.12) });
-    s.add(G.box(1.3, 3.6, 0.12), C.glass, { x, y: 31, z, ry });
-  }
-  for (const x of [-4.1, 4.1]) for (const z of [-0.1, -7.9]) {
-    s.add(G.cyl(0.55, 0.6, 5, 8), grey, { x, y: 36, z });
-    s.add(G.cone(0.7, 3.5, 8), slate, { x, y: 40.2, z });
-  }
-  s.add(G.cone(5.2, 18, 4), slate, { y: 43, z: -4, ry: Math.PI / 4 });
-  s.add(G.box(0.25, 2.6, 0.25), GOLD, { y: 53.3, z: -4 });
-  s.add(G.box(1.4, 0.25, 0.25), GOLD, { y: 53.8, z: -4 });
-  // Steps and a small green.
-  s.add(G.rbox(12, 0.5, 4, 0.1), 0xd9d3c4, { y: 0.25, z: 1.5 });
-  s.add(G.rbox(24, 0.3, 10, 0.1), 0x7cb35a, { y: 0.15, z: 0 });
-  return s;
-}
-
 /** Distant skyline band for a city, built once; it stays on the horizon as the player drives. */
-export function skyline(city: CityId, haze: number): THREE.BufferGeometry {
+export function skyline(_city: CityId, haze: number): THREE.BufferGeometry {
   const s = new Shape();
-  const rng = mulberry32(city === 'london' ? 31 : 47);
+  const rng = mulberry32(31);
   const tint = (c: number): number => mix(c, haze, 0.55);
-  const glass = city === 'london' ? [0x5d86b8, 0x7fa2c8, 0x9ab3cc, 0x6c8fb0] : [0x4f8fc8, 0x6fa8d8, 0xd9d0bc, 0xc9c1ae];
+  const glass = [0x5d86b8, 0x7fa2c8, 0x9ab3cc, 0x6c8fb0];
   for (let i = 0; i < 46; i++) {
     const x = (rng() - 0.5) * 1500;
     if (Math.abs(x) < 40) continue;
@@ -164,15 +123,11 @@ export function skyline(city: CityId, haze: number): THREE.BufferGeometry {
     else s.add(G.rbox(w, h, w * 0.8, 2), color, { x, y: h / 2, z });
     s.add(G.box(w * 0.9, 1.5, w * 0.82), tint(0xe9eef2), { x, y: h * 0.62, z });
   }
-  if (city === 'london') {
-    // A glass spire, a domed cathedral and a rounded tower on the London horizon.
-    s.add(G.cone(30, 250, 4), tint(0x8fb0cc), { x: 180, y: 125, z: -700, ry: 0.4 });
-    s.add(G.cyl(26, 26, 40, 16), tint(0xd8d2c4), { x: -260, y: 20, z: -640 });
-    s.add(G.dome(24, 16, 8), tint(0xb8b2a6), { x: -260, y: 40, z: -640 });
-    s.add(G.cyl(3, 3, 14, 8), tint(0xd8d2c4), { x: -260, y: 70, z: -640 });
-    s.add(G.sphere(20, 14, 12), tint(0x6f8fae), { x: 60, y: 70, z: -760, sy: 3.4 });
-  } else {
-    for (let i = 0; i < 6; i++) s.add(G.cyl(6, 9, 120 + i * 10, 10), tint(0xd9d0bc), { x: -500 + i * 190, y: 60 + i * 5, z: -820 });
-  }
+  // A glass spire, a domed cathedral and a rounded tower on the London horizon.
+  s.add(G.cone(30, 250, 4), tint(0x8fb0cc), { x: 180, y: 125, z: -700, ry: 0.4 });
+  s.add(G.cyl(26, 26, 40, 16), tint(0xd8d2c4), { x: -260, y: 20, z: -640 });
+  s.add(G.dome(24, 16, 8), tint(0xb8b2a6), { x: -260, y: 40, z: -640 });
+  s.add(G.cyl(3, 3, 14, 8), tint(0xd8d2c4), { x: -260, y: 70, z: -640 });
+  s.add(G.sphere(20, 14, 12), tint(0x6f8fae), { x: 60, y: 70, z: -760, sy: 3.4 });
   return s.build();
 }

@@ -10,7 +10,7 @@ import { Stage } from '../world/stage.ts';
 
 export function startGallery(host: HTMLElement): void {
   const params = new URLSearchParams(window.location.search);
-  const city = (params.get('city') === 'lagos' ? 'lagos' : 'london') as CityId;
+  const city: CityId = 'london';
   const view = params.get('gallery') || 'front';
   document.getElementById('loading')?.setAttribute('hidden', '');
   const stage = new Stage(host);
@@ -20,11 +20,11 @@ export function startGallery(host: HTMLElement): void {
   groundMesh.receiveShadow = true;
   stage.scene.add(groundMesh);
   const single = params.get('model') as ModelId | null;
-  const models: ModelId[] = single ? [single] : city === 'london' ? ['doubledecker', 'blackcab', 'hatchback', 'sedan', 'suv', 'motorbike', 'van'] : ['danfo', 'sedan', 'taxi', 'keke', 'suv', 'okada', 'brt'];
+  const models: ModelId[] = single ? [single] : ['doubledecker', 'blackcab', 'hatchback', 'sedan', 'suv', 'motorbike', 'van'];
   let x = single ? -1e-3 : -14;
   for (const id of models) {
     const paint = PLAYER_PAINT[id as keyof typeof PLAYER_PAINT] ?? { body: 0xf2efe6, accent: 0x142b4e };
-    const parts = vehicleParts(id, paint, city === 'london' ? -1 : 1);
+    const parts = vehicleParts(id, paint, -1);
     const mesh = new THREE.Mesh(vehicleGeometry(parts), satin());
     const w = mesh.geometry.boundingBox?.max.x ?? 1;
     if (!single) x += w + 0.9;
@@ -45,7 +45,7 @@ export function startGallery(host: HTMLElement): void {
   const place = (): void => {
     stage.resize();
     if (single) {
-      const l = (single === 'doubledecker' || single === 'brt' ? 11 : single === 'motorbike' || single === 'okada' || single === 'keke' ? 4.2 : 6.5);
+      const l = single === 'doubledecker' ? 11 : single === 'motorbike' ? 4.2 : 6.5;
       if (view === 'rear') cam.position.set(l * 0.45, l * 0.42, l * 0.95);
       else cam.position.set(-l * 0.62, l * 0.36, -l * 0.8);
       cam.lookAt(0, single === 'doubledecker' ? 1.8 : 0.85, 0);

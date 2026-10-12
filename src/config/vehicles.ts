@@ -1,13 +1,13 @@
 import type { CityId } from './cities.ts';
 
 /** Vehicles the player can drive. Sizes follow the West Road Life modelling sheet (metres). */
-export type VehicleId = 'doubledecker' | 'blackcab' | 'hatchback' | 'sedan' | 'suv' | 'motorbike' | 'danfo' | 'taxi' | 'keke' | 'okada';
+export type VehicleId = 'doubledecker' | 'blackcab' | 'hatchback' | 'sedan' | 'suv' | 'motorbike';
 /** Vehicles that only appear in traffic. */
-export type TrafficOnlyId = 'van' | 'brt';
+export type TrafficOnlyId = 'van';
 export type ModelId = VehicleId | TrafficOnlyId;
 
 /** Body styles share camera framing, engine sound and door behaviour. */
-export type BodyStyle = 'bus' | 'car' | 'bike' | 'keke';
+export type BodyStyle = 'bus' | 'car' | 'bike';
 
 export interface VehicleDef {
   readonly id: VehicleId;
@@ -40,16 +40,11 @@ export const VEHICLES: Readonly<Record<VehicleId, VehicleDef>> = {
   sedan: { id: 'sedan', name: 'Coral sedan', style: 'car', w: 1.8, l: 4.4, h: 1.5, seats: 3, fareMult: 2.5, cruise: 14.5, top: 35, accel: 5.6, brake: 12, steer: 5.6, health: 3, line: 'An everyday car for private hire.' },
   suv: { id: 'suv', name: 'Navy SUV', style: 'car', w: 2, l: 4.7, h: 1.9, seats: 5, fareMult: 2, cruise: 14, top: 32, accel: 5, brake: 11, steer: 4.8, health: 4, line: 'Tough, roomy and steady.' },
   motorbike: { id: 'motorbike', name: 'Violet motorcycle', style: 'bike', w: 0.8, l: 2.1, h: 2, seats: 1, fareMult: 3.5, cruise: 15, top: 38, accel: 8, brake: 13, steer: 7.5, health: 2, line: 'The fastest way through traffic.' },
-  danfo: { id: 'danfo', name: 'Yellow danfo', style: 'bus', w: 2, l: 4.7, h: 2.5, seats: 14, fareMult: 1, cruise: 13.5, top: 24, accel: 3.6, brake: 9.5, steer: 4.2, health: 3, line: 'Lagos on wheels. Oya, enter!' },
-  taxi: { id: 'taxi', name: 'Lagos taxi', style: 'car', w: 1.8, l: 4.4, h: 1.5, seats: 4, fareMult: 3, cruise: 14, top: 33, accel: 5.4, brake: 12, steer: 5.6, health: 3, line: 'Yellow cab, door-to-door fares.' },
-  keke: { id: 'keke', name: 'Keke', style: 'keke', w: 1.4, l: 2.7, h: 1.8, seats: 3, fareMult: 1.6, cruise: 12, top: 17, accel: 4, brake: 10, steer: 6.5, health: 2, line: 'Three wheels, squeezes anywhere.' },
-  okada: { id: 'okada', name: 'Okada', style: 'bike', w: 0.8, l: 2.1, h: 2, seats: 1, fareMult: 2.5, cruise: 15, top: 36, accel: 8, brake: 13, steer: 7.5, health: 2, line: 'One rider, no go-slow.' },
 };
 
 /** Player fleets, in garage order. */
 export const FLEETS: Readonly<Record<CityId, readonly VehicleId[]>> = {
   london: ['doubledecker', 'blackcab', 'hatchback', 'sedan', 'suv', 'motorbike'],
-  lagos: ['danfo', 'sedan', 'taxi', 'keke', 'suv', 'okada'],
 };
 
 export const vehicleById = (id: VehicleId): VehicleDef => VEHICLES[id];
@@ -58,7 +53,6 @@ export const vehicleById = (id: VehicleId): VehicleDef => VEHICLES[id];
 export const MODEL_SIZE: Readonly<Record<ModelId, { w: number; l: number; h: number }>> = {
   ...Object.fromEntries(Object.values(VEHICLES).map((v) => [v.id, { w: v.w, l: v.l, h: v.h }])),
   van: { w: 2, l: 5.2, h: 2.4 },
-  brt: { w: 2.55, l: 12, h: 3.2 },
 } as Record<ModelId, { w: number; l: number; h: number }>;
 
 /** Paint for one model: body plus a second accent colour. */
@@ -75,10 +69,6 @@ export const PLAYER_PAINT: Readonly<Record<VehicleId, Paint>> = {
   sedan: { body: 0xef5b4c, accent: 0x142b4e },
   suv: { body: 0x1f2f5a, accent: 0x2a2d33 },
   motorbike: { body: 0x7647d8, accent: 0x2d5bd0 },
-  danfo: { body: 0xffc832, accent: 0x142b4e },
-  taxi: { body: 0xffd447, accent: 0x1a1d24 },
-  keke: { body: 0xffcf3a, accent: 0x1f8a4c },
-  okada: { body: 0xd83a3a, accent: 0x2a8a5a },
 };
 
 /** Paint variety for ordinary traffic. */
@@ -106,11 +96,6 @@ export const TRAFFIC_PAINTS: Readonly<Partial<Record<ModelId, readonly Paint[]>>
     { body: 0x7647d8, accent: 0x2d5bd0 },
     { body: 0xef4b43, accent: 0x142b4e },
   ],
-  okada: [
-    { body: 0xd83a3a, accent: 0x2a8a5a },
-    { body: 0x2b2f36, accent: 0xffd447 },
-    { body: 0x3a6fd8, accent: 0xef7a2b },
-  ],
   van: [
     { body: 0xf2efe6, accent: 0x142b4e },
     { body: 0x9aa3ad, accent: 0x142b4e },
@@ -127,14 +112,5 @@ export const TRAFFIC_MIX: Readonly<Record<CityId, readonly (readonly [ModelId, n
     ['van', 2],
     ['doubledecker', 2],
     ['motorbike', 2],
-  ],
-  lagos: [
-    ['danfo', 6],
-    ['sedan', 4],
-    ['taxi', 2],
-    ['suv', 3],
-    ['keke', 3],
-    ['okada', 3],
-    ['brt', 1],
   ],
 };

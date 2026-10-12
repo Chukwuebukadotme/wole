@@ -23,34 +23,16 @@ export interface Look {
   readonly height: number;
 }
 
-const HAIR_DARK = [0x1d1612, 0x2a1d16, 0x3b2a1f];
 const HAIR_LONDON = [0x1d1612, 0x3b2a1f, 0x6b4a2b, 0xc79a52, 0x8a3b22];
 const BRIGHT = [0xef4b43, 0x12bcc1, 0xffd447, 0x7647d8, 0x2a8a5a, 0xef7a2b, 0xe85d9c, 0x2d5bd0];
 const LONDON_TOPS = [0x2d5bd0, 0xef4b43, 0x12bcc1, 0x7647d8, 0x2b2f36, 0xf2efe6, 0x609d55, 0xc98a2b, 0x8a9099];
 const LONDON_BOTTOMS = [0x1d2a44, 0x2b2f36, 0x3a4a6a, 0x6b6f78, 0xd8c8a6];
 const SHOES = [0xf7f4ec, 0x23262d, 0x6b4a2b];
 
-/** A random look for a city. */
-export function randomLook(city: CityId, rng: Rng): Look {
-  const skin = city === 'lagos' ? pick(C.skin.slice(0, 4), rng) : pick(C.skin, rng);
+/** A random look for a Londoner. */
+export function randomLook(_city: CityId, rng: Rng): Look {
+  const skin = pick(C.skin, rng);
   const height = 0.94 + rng() * 0.12;
-  if (city === 'lagos') {
-    const woman = rng() < 0.5;
-    const outfit: Outfit = woman ? pick(['dress', 'dress', 'trousers', 'kaftan'] as const, rng) : pick(['trousers', 'trousers', 'kaftan', 'shorts'] as const, rng);
-    const hair: Hair = woman ? pick(['gele', 'gele', 'braids', 'puffs', 'afro', 'bun'] as const, rng) : pick(['short', 'short', 'fila', 'cap', 'bald', 'afro'] as const, rng);
-    return {
-      skin,
-      hair,
-      hairColor: pick(HAIR_DARK, rng),
-      outfit,
-      top: pick(BRIGHT, rng),
-      bottom: outfit === 'trousers' || outfit === 'shorts' ? pick([0x1d2a44, 0x2b2f36, 0xf2efe6, 0x3a4a6a], rng) : pick(BRIGHT, rng),
-      pattern: pick(BRIGHT, rng),
-      shoes: pick(SHOES, rng),
-      extra: pick(['none', 'none', 'bag', 'tote', 'backpack', 'umbrella'] as const, rng),
-      height,
-    };
-  }
   const woman = rng() < 0.5;
   return {
     skin,
@@ -61,14 +43,9 @@ export function randomLook(city: CityId, rng: Rng): Look {
     bottom: pick(LONDON_BOTTOMS, rng),
     pattern: pick(BRIGHT, rng),
     shoes: pick(SHOES, rng),
-    extra: pick(['none', 'none', 'backpack', 'bag', 'tote'] as const, rng),
+    extra: pick(['none', 'none', 'backpack', 'bag', 'tote', 'umbrella'] as const, rng),
     height,
   };
-}
-
-/** A Lagos street hawker with a loaded tray on her head. */
-export function hawkerLook(rng: Rng): Look {
-  return { ...randomLook('lagos', rng), hair: 'gele', outfit: 'dress', extra: 'tray' };
 }
 
 function hairShape(s: Shape, look: Look, headY: number, r: number): void {
@@ -216,8 +193,6 @@ export function makeRider(jacket: number, trousers: number, helmet: number, skin
 
 /** A fixed set of looks per city for crowds; seeded so they never change between visits. */
 export function crowdLooks(city: CityId, count: number): Look[] {
-  const rng = mulberry32(city === 'lagos' ? 2024 : 1066);
-  const looks = Array.from({ length: count }, () => randomLook(city, rng));
-  if (city === 'lagos') looks.push(hawkerLook(rng), hawkerLook(rng));
-  return looks;
+  const rng = mulberry32(1066);
+  return Array.from({ length: count }, () => randomLook(city, rng));
 }

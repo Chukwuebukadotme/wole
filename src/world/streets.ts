@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { cityById, isBridge, type CityId, type LandmarkKind, type Theme } from '../config/cities.ts';
 import { BUILDERS, type BuildingArt, type BuildingKind } from '../art/buildings.ts';
 import { G, Shape, shade } from '../art/kit.ts';
-import { cathedral, skyline, towerBridge, BRIDGE_DECK } from '../art/landmarks.ts';
+import { skyline, towerBridge, BRIDGE_DECK } from '../art/landmarks.ts';
 import { C, matte, satin } from '../art/materials.ts';
 import { crowdLooks, makePerson } from '../art/people.ts';
 import * as P from '../art/props.ts';
@@ -36,18 +36,12 @@ const THEME_BUILDINGS: Readonly<Record<Theme, readonly (readonly [BuildingKind, 
   'london-warehouse': [['london-warehouse', 6], ['london-modern', 1]],
   'london-quay': [['london-warehouse', 3], ['london-terrace', 2], ['london-shop', 2]],
   'london-bridge': [],
-  'lagos-marina': [['marina-block', 5], ['old-shop', 2]],
-  'lagos-island': [['marina-block', 3], ['old-shop', 4], ['ikeja-block', 1]],
-  'lagos-market': [['market-shed', 4], ['old-shop', 3], ['ikeja-block', 2]],
-  'lagos-ikeja': [['ikeja-block', 6], ['ikeja-plaza', 1.5], ['old-shop', 1]],
-  'lagos-vi': [['vi-tower', 3], ['vi-office', 3]],
-  'lagos-lagoon': [['vi-tower', 3], ['vi-office', 2]],
 };
 
 /** Side of the road with water for themes that have it (the side away from the stopping bays). */
 function sideKind(theme: Theme, sign: -1 | 1, citySide: -1 | 1): SideKind {
   if (isBridge(theme)) return 'bridge';
-  if ((theme === 'london-quay' || theme === 'lagos-marina' || theme === 'lagos-lagoon') && sign === -citySide) return 'water';
+  if (theme === 'london-quay' && sign === -citySide) return 'water';
   return 'street';
 }
 
@@ -62,37 +56,31 @@ const weightedPick = <T,>(items: readonly (readonly [T, number])[], rng: Rng): T
 };
 
 // ---------- Road pieces (built for the right-hand side, mirrored for the left) ----------
-function roadPiece(city: CityId): Shape {
+function roadPiece(): Shape {
   const s = new Shape();
-  const asphalt = city === 'london' ? 0x5b616c : 0x60626a;
+  const asphalt = 0x5b616c;
   s.add(G.box(KERB * 2, 0.1, TILE), asphalt, { y: -0.05 });
   for (const x of [-1.7, 1.7]) for (let z = -TILE / 2 + 1.5; z < TILE / 2; z += 6) s.add(G.box(0.16, 0.02, 3), C.white, { x, y: 0.005, z });
-  for (const x of [-KERB + 0.3, KERB - 0.3]) s.add(G.box(0.14, 0.02, TILE), city === 'london' ? C.white : 0xffd447, { x, y: 0.005 });
+  for (const x of [-KERB + 0.3, KERB - 0.3]) s.add(G.box(0.14, 0.02, TILE), C.white, { x, y: 0.005 });
   // A little wear down the middle of each lane.
   for (const x of [-3.4, 0, 3.4]) s.add(G.box(1.4, 0.01, TILE), shade(asphalt, 0.94), { x, y: 0.002 });
   return s;
 }
 
-function kerb(s: Shape, city: CityId, x: number, len: number, z = 0, ry = 0): void {
-  if (city === 'lagos') {
-    const n = Math.max(1, Math.round(len));
-    for (let i = 0; i < n; i++) {
-      const t = (i + 0.5) / n - 0.5;
-      s.add(G.rbox(0.32, 0.2, len / n, 0.03), i % 2 ? C.white : 0x2a2d34, { x: x + Math.sin(ry) * t * len, y: 0.1, z: z + Math.cos(ry) * t * len, ry });
-    }
-  } else s.add(G.rbox(0.32, 0.2, len, 0.04), 0xc8c1b4, { x, y: 0.1, z, ry });
+function kerb(s: Shape, _city: CityId, x: number, len: number, z = 0, ry = 0): void {
+  s.add(G.rbox(0.32, 0.2, len, 0.04), 0xc8c1b4, { x, y: 0.1, z, ry });
 }
 
-function pavement(s: Shape, city: CityId, from: number, to: number): void {
-  const slab = city === 'london' ? 0xdcd2bd : 0xd8c9a6;
+function pavement(s: Shape, _city: CityId, from: number, to: number): void {
+  const slab = 0xdcd2bd;
   const joint = shade(slab, 0.92);
   s.add(G.box(to - from, 0.16, TILE), slab, { x: (from + to) / 2, y: 0.08 });
   for (let z = -TILE / 2 + 1.5; z < TILE / 2; z += 1.5) s.add(G.box(to - from, 0.012, 0.05), joint, { x: (from + to) / 2, y: 0.165, z });
   for (let x = from + 1.5; x < to - 0.2; x += 1.5) s.add(G.box(0.05, 0.012, TILE), joint, { x, y: 0.165 });
 }
 
-function ground(s: Shape, city: CityId): void {
-  s.add(G.box(110, 0.1, TILE), city === 'london' ? 0xc4b9a2 : 0xcdb98f, { x: BUILD_LINE + 55, y: 0.02 });
+function ground(s: Shape, _city: CityId): void {
+  s.add(G.box(110, 0.1, TILE), 0xc4b9a2, { x: BUILD_LINE + 55, y: 0.02 });
 }
 
 function streetPiece(city: CityId): Shape {
@@ -117,7 +105,7 @@ function bayPiece(city: CityId, entry: boolean): Shape {
   const pts: [number, number][] = entry
     ? [[inner, h], [inner, -h], [outer, -h], [outer, h - taper]]
     : [[inner, h], [inner, -h], [outer, -h + taper], [outer, h]];
-  s.add(G.flat(pts), city === 'london' ? 0x5b616c : 0x60626a, { y: 0.004 });
+  s.add(G.flat(pts), 0x5b616c, { y: 0.004 });
   // Kerb along the bay and its taper.
   const straightLen = TILE - taper;
   kerb(s, city, outer + 0.16, straightLen, entry ? -taper / 2 : taper / 2);
@@ -129,7 +117,7 @@ function bayPiece(city: CityId, entry: boolean): Shape {
   const wedge: [number, number][] = entry
     ? [[inner + 0.2, h], [outer + 0.32, h - taper - 0.1], [outer + 0.32, h]]
     : [[inner + 0.2, -h], [outer + 0.32, -h], [outer + 0.32, -h + taper + 0.1]];
-  s.add(G.flat(wedge), city === 'london' ? 0xdcd2bd : 0xd8c9a6, { y: 0.16 });
+  s.add(G.flat(wedge), 0xdcd2bd, { y: 0.16 });
   ground(s, city);
   // Yellow bay markings: a dashed line along the lane and the bay outline.
   for (let z = -h + 0.5; z < h; z += 1.6) s.add(G.box(0.14, 0.02, 0.9), 0xffd447, { x: inner + 0.12, y: 0.012, z });
@@ -157,16 +145,6 @@ function bridgePiece(): Shape {
   s.add(G.rbox(0.16, 0.12, TILE, 0.04), C.bridgeBlue, { x: BRIDGE_DECK + 0.3, y: 1.45 });
   s.add(G.rbox(0.12, 0.08, TILE, 0.03), C.bridgeBlue, { x: BRIDGE_DECK + 0.3, y: 0.9 });
   s.add(G.box(KERB * 2 + 6, 1.5, TILE), 0x8a8f96, { x: -BRIDGE_DECK, y: -1.0, sx: 0.001 });
-  return s;
-}
-
-/** Sagging power cables from one pole to the next, one tile ahead. */
-function cables(): Shape {
-  const s = new Shape();
-  for (const x of [-0.9, 0, 0.9]) {
-    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(x, 8.6, 0), new THREE.Vector3(x, 7.4, -TILE / 2), new THREE.Vector3(x, 8.6, -TILE));
-    s.add(new THREE.TubeGeometry(curve, 10, 0.025, 4, false), 0x2a2d34);
-  }
   return s;
 }
 
@@ -212,7 +190,7 @@ export class Streets {
     const S = this.scatter;
     const reg = (id: string, shape: Shape, cap: number, mat: 'satin' | 'matte' = 'matte', shadow: 'cast' | 'receive' | 'both' | 'none' = 'both'): void =>
       S.kind(id, shape.build(), mat === 'satin' ? satin() : matte(), cap, shadow);
-    const road = roadPiece(city);
+    const road = roadPiece();
     reg('road', road, 40, 'matte', 'receive');
     const street = streetPiece(city);
     reg('street-R', street, 40, 'matte', 'receive');
@@ -225,17 +203,15 @@ export class Streets {
     const water = waterPiece(city);
     reg('water-R', water, 40, 'matte', 'both');
     reg('water-L', mirrorLeft(water), 40, 'matte', 'both');
-    if (city === 'london') {
-      const bridge = bridgePiece();
-      reg('bridge-R', bridge, 40, 'satin', 'both');
-      reg('bridge-L', mirrorLeft(bridge), 40, 'satin', 'both');
-    }
+    const bridge = bridgePiece();
+    reg('bridge-R', bridge, 40, 'satin', 'both');
+    reg('bridge-L', mirrorLeft(bridge), 40, 'satin', 'both');
     // Buildings: a few seeded variants of each kind the city uses.
     const kinds = new Set<BuildingKind>();
     for (const area of def.areas) for (const st of area.stretches) for (const [k] of THEME_BUILDINGS[st.theme]) kinds.add(k);
     const buildings: Partial<Record<BuildingKind, { id: string; art: BuildingArt }[]>> = {};
     for (const k of kinds) {
-      const variants = k === 'market-shed' || k === 'ikeja-block' || k === 'london-shop' ? 4 : 3;
+      const variants = k === 'london-shop' ? 4 : 3;
       buildings[k] = Array.from({ length: variants }, (_, v) => {
         const art = BUILDERS[k](mulberry32(hashString(`${k}:${v}`)));
         const id = `b:${k}:${v}`;
@@ -252,22 +228,10 @@ export class Streets {
     reg('shelter', P.shelter(city), 8, 'satin');
     reg('stopsign', P.stopSign(city), 8, 'satin');
     for (let v = 0; v < 2; v++) reg(`boat${v}`, P.boat(v * 7 + 2), 20, 'satin');
-    if (city === 'london') {
-      reg('lamp', P.lampLondon(), 70, 'satin');
-      reg('bollard', P.bollard(), 80, 'satin');
-      reg('phonebox', P.phoneBox(), 10, 'satin');
-      reg('postbox', P.postBox(), 10, 'satin');
-    } else {
-      reg('lamp', P.lampLagos(), 70, 'satin');
-      reg('globe', P.lampGlobe(), 50, 'satin');
-      for (let v = 0; v < 3; v++) reg(`palm${v}`, P.palm(v * 13 + 5, 0.9 + v * 0.1), 70);
-      for (let v = 0; v < 3; v++) reg(`stall${v}`, P.marketStall(v * 11 + 1), 50);
-      for (let v = 0; v < 2; v++) reg(`umbrella${v}`, P.umbrella(v * 5 + 9), 50);
-      reg('pole', P.powerPole(), 30);
-      reg('cables', cables(), 30, 'matte', 'none');
-      reg('billboard', P.billboard(), 10, 'satin');
-      reg('bed', P.stripedBed(TILE - 4, 3), 30);
-    }
+    reg('lamp', P.lampLondon(), 70, 'satin');
+    reg('bollard', P.bollard(), 80, 'satin');
+    reg('phonebox', P.phoneBox(), 10, 'satin');
+    reg('postbox', P.postBox(), 10, 'satin');
     // Standing people on the pavements.
     const looks = crowdLooks(city, 12);
     looks.forEach((look, i) => reg(`idle${i}`, makePerson(look), 40, 'matte', 'cast'));
@@ -281,15 +245,14 @@ export class Streets {
     // Landmarks and skyline.
     for (const g of this.landmarkGeo.values()) g.dispose();
     this.landmarkGeo.clear();
-    if (city === 'london') this.landmarkGeo.set('tower-bridge', towerBridge().build());
-    else this.landmarkGeo.set('cathedral', cathedral().build());
+    this.landmarkGeo.set('tower-bridge', towerBridge().build());
     if (this.skylineMesh) {
       this.skylineMesh.geometry.dispose();
       this.skylineMesh.removeFromParent();
     }
     this.skylineMesh = new THREE.Mesh(skyline(city, city === 'london' ? 0xcde7f6 : 0xe3ecee), new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
     this.stage.far.add(this.skylineMesh);
-    (this.water.material as THREE.MeshStandardMaterial).color.setHex(city === 'london' ? 0x5ea3d4 : 0x3f98d4);
+    (this.water.material as THREE.MeshStandardMaterial).color.setHex(0x5ea3d4);
   }
 
   /** Start a drive: rebuild everything around `dist`. */
@@ -332,10 +295,7 @@ export class Streets {
       const mesh = new THREE.Mesh(geo, matte());
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      if (lm.kind === 'cathedral') {
-        mesh.position.set(this.kit.side * 17, 0, -lm.at);
-        mesh.rotation.y = -this.kit.side * (Math.PI / 2);
-      } else mesh.position.set(0, 0, -lm.at);
+      mesh.position.set(0, 0, -lm.at);
       this.stage.world.add(mesh);
       this.landmarks.set(lm.key, mesh);
     }
@@ -377,16 +337,13 @@ export class Streets {
         continue;
       }
       if (kind === 'water') {
-        put(kit.id === 'london' ? 'lamp' : 'globe', at(x(8.0), 0.16, z(12), sign > 0 ? Math.PI : 0));
-        if (kit.id === 'lagos' && rng() < 0.7) put(`palm${Math.floor(rng() * 3)}`, at(x(6.9), 0.16, z(4 + rng() * 6)));
+        put('lamp', at(x(8.0), 0.16, z(12), sign > 0 ? Math.PI : 0));
         if (rng() < 0.35) put(`boat${Math.floor(rng() * 2)}`, at(x(26 + rng() * 50), -2.9, z(rng() * TILE), rng() * Math.PI * 2));
         if (rng() < 0.5) this.idlePerson(put, x(6.6 + rng() * 1.2), z(rng() * TILE), rng, kit);
         continue;
       }
       // Street side: buildings along the building line.
-      const landmark = layout.nearLandmark(dm, 46) && sign === kit.side && kit.id === 'lagos';
-      if (!landmark) this.buildings(put, theme, sign, d0, rng, kit);
-      else if (Math.abs(dm - (layout.landmarksIn(dm - 60, dm + 60)[0]?.at ?? dm)) > 20) put(`tree${Math.floor(rng() * 3)}`, at(x(14 + rng() * 4), 0, z(6 + rng() * 12)));
+      this.buildings(put, theme, sign, d0, rng, kit);
       // Street furniture between the kerb and the shops.
       const lampX = isBaySide ? KERB + BAY_DEPTH + 0.8 : KERB + 0.7;
       if ((i + (sign > 0 ? 1 : 0)) % 2 === 0) put('lamp', at(x(lampX), 0.16, z(12), sign > 0 ? Math.PI : 0));
@@ -399,7 +356,7 @@ export class Streets {
         }
         continue;
       }
-      this.furniture(put, theme, sign, d0, i, rng, kit);
+      this.furniture(put, theme, sign, d0, rng, kit);
     }
     return out;
   }
@@ -430,7 +387,7 @@ export class Streets {
     }
   }
 
-  private furniture(put: (id: string, m: THREE.Matrix4, cell?: Cell) => void, theme: Theme, sign: -1 | 1, d0: number, i: number, rng: Rng, kit: CityKit): void {
+  private furniture(put: (id: string, m: THREE.Matrix4, cell?: Cell) => void, theme: Theme, sign: -1 | 1, d0: number, rng: Rng, kit: CityKit): void {
     const x = (o: number): number => sign * o;
     const z = (o: number): number => d0 + o;
     const face = sign > 0 ? -Math.PI / 2 : Math.PI / 2;
@@ -450,40 +407,10 @@ export class Streets {
         for (let o = 3; o < TILE; o += 4) if (rng() < 0.7) put('bollard', at(x(KERB + 0.5), 0.16, z(o)));
         if (rng() < 0.3) tree(12);
         break;
-      case 'lagos-island':
-      case 'lagos-marina':
-        if (rng() < 0.45) tree(4 + rng() * 10);
-        if (rng() < 0.35) put(`umbrella${Math.floor(rng() * 2)}`, at(x(8.8), 0.16, z(14 + rng() * 6)));
-        if (rng() < 0.2) put(`stall${Math.floor(rng() * 3)}`, at(x(9.4), 0.16, z(rng() * 20), face));
-        break;
-      case 'lagos-market':
-        // Wole Wole's markets: stalls and umbrellas crowding the pavement.
-        for (let o = 2; o < TILE - 1; o += 3.4 + rng() * 2) {
-          const r = rng();
-          if (r < 0.45) put(`stall${Math.floor(rng() * 3)}`, at(x(7.6 + rng() * 2), 0.16, z(o), face + (rng() - 0.5) * 0.4));
-          else if (r < 0.75) put(`umbrella${Math.floor(rng() * 2)}`, at(x(7.2 + rng() * 2.6), 0.16, z(o)));
-        }
-        break;
-      case 'lagos-ikeja':
-        if (sign === -kit.side) {
-          put('pole', at(x(KERB + 0.8), 0.16, z(TILE / 2), face));
-          put('cables', at(x(KERB + 0.8), 0.16, z(TILE / 2), face + (sign > 0 ? Math.PI / 2 : -Math.PI / 2)));
-          if (i % 5 === 0) put('billboard', at(x(BUILD_LINE - 1.5), 0, z(12), face));
-        }
-        if (rng() < 0.5) tree(6 + rng() * 12);
-        if (rng() < 0.35) put(`umbrella${Math.floor(rng() * 2)}`, at(x(9.2), 0.16, z(rng() * TILE)));
-        break;
-      case 'lagos-vi':
-      case 'lagos-lagoon':
-        put(`palm${Math.floor(rng() * 3)}`, at(x(8.2), 0.16, z(5)));
-        put(`palm${Math.floor(rng() * 3)}`, at(x(8.2), 0.16, z(17)));
-        if (i % 2 === 0) put('bed', at(x(6.3), 0.16, z(12), Math.PI / 2));
-        else if (rng() < 0.6) put('planter', at(x(9.6), 0.16, z(11), face));
-        break;
       case 'london-bridge':
         break;
     }
-    const people = theme === 'lagos-market' ? 4 : theme.startsWith('lagos') ? 2 : 1.4;
+    const people = 1.4;
     for (let k = 0; k < people; k++) if (rng() < (people - k > 1 ? 0.9 : people - k)) this.idlePerson(put, x(6.4 + rng() * 4), z(rng() * TILE), rng, kit);
   }
 

@@ -1,7 +1,7 @@
 // Entry point. ?gallery and ?street open development views; ?debug exposes the app to automated tests.
 import { App } from './app.ts';
 import { bindInput } from './input.ts';
-import { decodeChallenge } from './rules/social.ts';
+import { decodeChallenge, isWoleChallenge } from './rules/social.ts';
 
 const host = document.getElementById('app');
 const params = new URLSearchParams(window.location.search);
@@ -24,7 +24,9 @@ function recovery(): void {
 }
 
 // Development views are left out of production builds.
-if (host && import.meta.env.DEV && params.has('gallery')) void import('./dev/gallery.ts').then((m) => m.startGallery(host));
+// Wole Wole (Lagos) used to live here: send its old challenge links on to /lagos/.
+if (isWoleChallenge(params.get('c'))) window.location.replace(new URL(`lagos/?c=${params.get('c') ?? ''}`, document.baseURI).href);
+else if (host && import.meta.env.DEV && params.has('gallery')) void import('./dev/gallery.ts').then((m) => m.startGallery(host));
 else if (host && import.meta.env.DEV && params.has('street')) void import('./dev/streetview.ts').then((m) => m.startStreetView(host));
 else if (host) {
   try {

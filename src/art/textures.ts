@@ -1,4 +1,4 @@
-// Canvas textures: a shared atlas of shop signs and billboards, the danfo sticker and the river.
+// Canvas textures: a shared atlas of shop signs and billboards, the vehicle sticker and the river.
 // Every name and advert is invented for the game.
 import * as THREE from 'three';
 import type { CityId } from '../config/cities.ts';
@@ -22,35 +22,11 @@ const LONDON_SHOPS = [
   'WAPPING WINES',
   'TEA ROOMS',
 ];
-const LAGOS_SHOPS = [
-  "GOD'S GRACE ELECTRONICS",
-  'MAMA PUT · FOOD IS READY',
-  'IYA BASIRA PROVISIONS',
-  'JESUS IS LORD PHONES',
-  'ADUKE FABRICS',
-  'OLUWASEUN VULCANISER',
-  'BEST CHOICE PHARMACY',
-  'MR FIX ELECTRICALS',
-  'MUSA SUYA SPOT',
-  'GLAMOUR SALOON',
-  'KING OF KINGS POS',
-  'NO WAHALA BUKA',
-  'ABIKE GELE & ASO-OKE',
-  'EKO MOBILE ACCESSORIES',
-  'DIVINE FAVOUR STORES',
-  'CHOP LIFE RESTAURANT',
-];
 const LONDON_ADS = [
   ['RIVER BUS', 'See the city from the Thames'],
   ['TEA O’CLOCK', 'Proper tea, all day'],
   ['WEST ROAD LIFE', 'Drive it. Share it.'],
   ['MUSEUM OF BUSES', 'Free entry this weekend'],
-] as const;
-const LAGOS_ADS = [
-  ['MAMA’S JOLLOF', 'Party rice, every day'],
-  ['WEST ROAD LIFE', 'Oya, drive and share!'],
-  ['SUPA MALT', 'Cold one for the go-slow'],
-  ['EKO DATA', 'Fast internet, no shakara'],
 ] as const;
 
 export const SHOP_COLS = 4;
@@ -79,7 +55,7 @@ function fitText(g: CanvasRenderingContext2D, text: string, maxW: number, size: 
  * Sign atlas for a city: shop fascias in the top half (4 × 16 cells of 512 × 64)
  * and billboards in the bottom half (2 × 4 cells of 1024 × 256).
  */
-export function signAtlas(city: CityId): { texture: THREE.CanvasTexture; shop: Cell[]; board: Cell[] } {
+export function signAtlas(_city: CityId): { texture: THREE.CanvasTexture; shop: Cell[]; board: Cell[] } {
   const W = 2048;
   const H = 2048;
   const canvas = document.createElement('canvas');
@@ -88,46 +64,25 @@ export function signAtlas(city: CityId): { texture: THREE.CanvasTexture; shop: C
   const g = canvas.getContext('2d');
   const shop: Cell[] = [];
   const board: Cell[] = [];
-  const rng = mulberry32(city === 'london' ? 5 : 9);
+  const rng = mulberry32(5);
   if (g) {
     const cw = W / SHOP_COLS;
     const ch = 64;
-    const names = city === 'london' ? LONDON_SHOPS : LAGOS_SHOPS;
+    const names = LONDON_SHOPS;
     for (let r = 0; r < SHOP_ROWS; r++)
       for (let c = 0; c < SHOP_COLS; c++) {
         const x = c * cw;
         const y = r * ch;
         const name = names[(r * SHOP_COLS + c) % names.length] ?? 'SHOP';
-        if (city === 'london') {
-          const bg = pick([0x1f3a6b, 0x2f4f3a, 0x23262d, 0x7a1f24, 0x2b4a7c], rng);
-          g.fillStyle = `#${bg.toString(16).padStart(6, '0')}`;
-          g.fillRect(x, y, cw, ch);
-          g.strokeStyle = '#e8b847';
-          g.lineWidth = 3;
-          g.strokeRect(x + 6, y + 6, cw - 12, ch - 12);
-          g.fillStyle = '#fff3d9';
-          fitText(g, name, cw - 40, 34, 'Georgia, "Times New Roman", serif');
-        } else {
-          // Hand-painted: bright board, bold letters, a little wobble.
-          const bgs = ['#ffd447', '#12bcc1', '#ef4b43', '#2d5bd0', '#2a8a5a', '#fff3d9', '#ef7a2b', '#7647d8'];
-          const bg = pick(bgs, rng);
-          g.fillStyle = bg;
-          g.fillRect(x, y, cw, ch);
-          const dark = bg === '#ffd447' || bg === '#fff3d9';
-          g.fillStyle = dark ? '#142b4e' : '#fff3d9';
-          fitText(g, name, cw - 30, 36, '900 "Arial Black", Impact, sans-serif');
-          g.save();
-          g.translate(x + cw / 2, y + ch / 2 + 2);
-          g.rotate((rng() - 0.5) * 0.03);
-          g.textAlign = 'center';
-          g.textBaseline = 'middle';
-          g.fillText(name, 0, 0);
-          g.restore();
-          g.fillStyle = dark ? '#ef4b43' : '#ffd447';
-          g.fillRect(x + 10, y + ch - 9, cw - 20, 4);
-          shop.push({ u: x / W, v: 1 - (y + ch) / H, du: cw / W, dv: ch / H });
-          continue;
-        }
+        // Painted fascia: cream serif lettering in a gold line.
+        const bg = pick([0x1f3a6b, 0x2f4f3a, 0x23262d, 0x7a1f24, 0x2b4a7c], rng);
+        g.fillStyle = `#${bg.toString(16).padStart(6, '0')}`;
+        g.fillRect(x, y, cw, ch);
+        g.strokeStyle = '#e8b847';
+        g.lineWidth = 3;
+        g.strokeRect(x + 6, y + 6, cw - 12, ch - 12);
+        g.fillStyle = '#fff3d9';
+        fitText(g, name, cw - 40, 34, 'Georgia, "Times New Roman", serif');
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.fillText(name, x + cw / 2, y + ch / 2 + 2);
@@ -135,7 +90,7 @@ export function signAtlas(city: CityId): { texture: THREE.CanvasTexture; shop: C
       }
     const bw = W / BOARD_COLS;
     const bh = 256;
-    const ads = city === 'london' ? LONDON_ADS : LAGOS_ADS;
+    const ads = LONDON_ADS;
     const top = H / 2;
     for (let r = 0; r < BOARD_ROWS; r++)
       for (let c = 0; c < BOARD_COLS; c++) {

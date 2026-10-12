@@ -9,7 +9,7 @@ import { Drive, type DriveListener, type SoundName } from './game/drive.ts';
 import { PlayerVehicle, vehicleShape } from './game/player.ts';
 import { Traffic } from './game/traffic.ts';
 import { distanceText, money } from './rules/money.ts';
-import { SAVE_KEY, WOLE_KEY, bestKey, defaultSave, migrateWole, parseSave, type Mode, type SaveData } from './rules/save.ts';
+import { SAVE_KEY, bestKey, defaultSave, parseSave, type Mode, type SaveData } from './rules/save.ts';
 import { dailyDrive, dayKey, driveAdvice, encodeChallenge, shortDate, type Challenge, type DailyDrive } from './rules/social.ts';
 import { clamp } from './rules/util.ts';
 import { byId } from './ui/dom.ts';
@@ -49,7 +49,6 @@ interface LastDrive {
 const START = 240;
 const params = new URLSearchParams(window.location.search);
 const LONDON_CALLS = ['Next stop: {s}.', 'This bus is for {s}.', '{s}. Mind the doors, please.'];
-const LAGOS_CALLS = ['{S}! {S}! Oya, enter!', '{S}! Enter with your change o!', '{S}! One more chance, wole wole!', 'Owa o! {S} dey here!'];
 
 export class App {
   readonly stage: Stage;
@@ -103,19 +102,13 @@ export class App {
 
   // ---------- Saving ----------
   private load(): SaveData {
-    const lagosTime = Intl.DateTimeFormat().resolvedOptions().timeZone === 'Africa/Lagos';
     try {
       const raw = localStorage.getItem(SAVE_KEY);
-      if (raw) return parseSave(JSON.parse(raw), lagosTime ? 'lagos' : 'london');
-      const wole = localStorage.getItem(WOLE_KEY);
-      if (wole) {
-        const moved = migrateWole(JSON.parse(wole));
-        if (moved) return moved;
-      }
+      if (raw) return parseSave(JSON.parse(raw));
     } catch {
       // Storage blocked or corrupt: start fresh.
     }
-    return defaultSave(lagosTime ? 'lagos' : 'london');
+    return defaultSave();
   }
 
   private persist(): boolean {
@@ -166,7 +159,7 @@ export class App {
     }
     this.loadingScreen(city, 25);
     await frame();
-    this.stage.setCity(city, city === 'lagos' && [10, 11, 0, 1].includes(new Date().getMonth()));
+    this.stage.setCity(city);
     this.streets.setCity(city);
     this.loadingScreen(city, 75);
     await frame();
@@ -304,8 +297,12 @@ export class App {
         this.state = 'menu';
         this.renderSetup();
         break;
+      case 'lagos':
+        this.goLagos();
+        break;
       case 'city':
-        if (v === 'london' || v === 'lagos') void this.switchCity(v);
+        // Lagos is Wole Wole, its own game on its own page.
+        if (v === 'lagos') this.goLagos();
         break;
       case 'area':
         s.cities[s.city].area = v;
@@ -444,14 +441,13 @@ export class App {
     }
   }
 
-  private async switchCity(city: CityId): Promise<void> {
-    if (city === this.save.city) return;
-    this.save.city = city;
-    this.persist();
-    await this.loadCity(city);
-    this.stageShowcase();
-    this.sound.playMusic(this.sound.available ? city : null);
-    this.renderSetup();
+  /** Lagos is Wole Wole, a separate game on its own page. */
+  private goLagos(): void {
+    this.sound.playMusic(null);
+    this.loadingScreen('london', 100);
+    byId('loading-art').style.backgroundImage = 'url(art/lagos.jpg)';
+    byId('loading-text').textContent = 'Off to Lagos: Wole Wole';
+    window.location.href = new URL('lagos/', document.baseURI).href;
   }
 
   private pickVehicle(id: VehicleId): void {
@@ -471,7 +467,7 @@ export class App {
     return {
       card: (card, seconds) => this.hud.card(card, seconds),
       pop: (text, tone) => this.hud.pop(text, tone),
-      sound: (name: SoundName) => this.sound.play(name, this.config?.city ?? 'london'),
+      sound: (name: SoundName) => this.sound.play(name),
       damage: () => {
         this.hud.hurt();
         this.player.kick(0.9);
@@ -480,15 +476,12 @@ export class App {
     };
   }
 
-  /** The conductor in Lagos, or the bus announcement in London, as the vehicle nears a stop. */
+  /** The bus announcement, as a double-decker nears a stop. */
   private shout(stop: string): void {
     const cfg = this.config;
     if (!cfg) return;
     const style = VEHICLES[cfg.vehicle].style;
-    if (cfg.city === 'lagos' && (cfg.vehicle === 'danfo' || cfg.vehicle === 'keke')) {
-      const line = LAGOS_CALLS[Math.floor(Math.random() * LAGOS_CALLS.length)] ?? '';
-      this.hud.shout(line.replaceAll('{S}', stop.toUpperCase()).replaceAll('{s}', stop));
-    } else if (cfg.city === 'london' && style === 'bus') {
+    if (style === 'bus') {
       const line = LONDON_CALLS[Math.floor(Math.random() * LONDON_CALLS.length)] ?? '';
       this.hud.shout(line.replaceAll('{s}', stop));
     }

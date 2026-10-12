@@ -1,4 +1,4 @@
-// All sound is synthesised: a looping groove per city, an engine that follows the speed, and effects.
+// All sound is synthesised: a looping London groove, an engine that follows the speed, and effects.
 // Nothing plays until the first tap or key press; if audio is unavailable the game carries on silently.
 import type { CityId } from './config/cities.ts';
 import type { BodyStyle } from './config/vehicles.ts';
@@ -21,23 +21,6 @@ interface Groove {
 }
 
 const GROOVES: Readonly<Record<CityId, Groove>> = {
-  // Afrobeats feel: syncopated kick, log-drum bass, rolling shakers, marimba-ish chords.
-  lagos: {
-    bpm: 104,
-    kick: '1000001010000010',
-    snare: '0000100000001001',
-    hat: '1011101110111011',
-    bass: '0..7..0...5.3...',
-    stab: '0010010000100100',
-    chords: [
-      [57, 'min'],
-      [53, 'maj'],
-      [48, 'maj'],
-      [55, 'maj'],
-    ],
-    bassWave: 'sine',
-    stabWave: 'triangle',
-  },
   // Bouncy two-step: skipping kick, crisp snare, offbeat hats, warm plucks.
   london: {
     bpm: 128,
@@ -144,7 +127,7 @@ export class SoundBoard {
   private playStep(g: Groove, step: number, t: number): void {
     const s = step % 16;
     const bar = Math.floor(step / 16) % g.chords.length;
-    const [root, kind] = g.chords[bar] ?? [57, 'min'];
+    const [root, kind] = g.chords[bar] ?? [50, 'min'];
     const out = this.musicGain;
     if (!out) return;
     if (g.kick[s] === '1') this.kick(t, out);
@@ -233,7 +216,7 @@ export class SoundBoard {
       const a = c.createOscillator();
       const b = c.createOscillator();
       a.type = 'sawtooth';
-      b.type = style === 'bike' || style === 'keke' ? 'square' : 'sawtooth';
+      b.type = style === 'bike' ? 'square' : 'sawtooth';
       a.connect(filter);
       b.connect(filter);
       filter.connect(gain).connect(out);
@@ -244,11 +227,11 @@ export class SoundBoard {
     const n = this.engineNodes;
     const t = c.currentTime;
     const k = Math.max(0, Math.min(1, level));
-    const base = style === 'bus' ? 38 : style === 'bike' ? 70 : style === 'keke' ? 58 : 48;
-    const span = style === 'bus' ? 45 : style === 'bike' ? 150 : style === 'keke' ? 70 : 95;
+    const base = style === 'bus' ? 38 : style === 'bike' ? 70 : 48;
+    const span = style === 'bus' ? 45 : style === 'bike' ? 150 : 95;
     const f = base + span * k;
     n.a.frequency.setTargetAtTime(f, t, 0.06);
-    n.b.frequency.setTargetAtTime(f * (style === 'keke' ? 1.5 : 0.5), t, 0.06);
+    n.b.frequency.setTargetAtTime(f * 0.5, t, 0.06);
     n.filter.frequency.setTargetAtTime(300 + (throttle ? 900 : 380) * (0.35 + k), t, 0.1);
     n.gain.gain.setTargetAtTime(throttle ? 0.06 : 0.04, t, 0.1);
   }
@@ -283,7 +266,7 @@ export class SoundBoard {
     o.stop(t + dur + 0.05);
   }
 
-  play(name: SoundName | 'tap' | 'beep' | 'go', city: CityId = 'london'): void {
+  play(name: SoundName | 'tap' | 'beep' | 'go'): void {
     const out = this.sfxGain;
     const c = this.ctx;
     if (!out || !c) return;
@@ -325,16 +308,9 @@ export class SoundBoard {
         break;
       }
       case 'bell':
-        // London bus bell "ding ding"; in Lagos, the danfo's two-tone horn.
-        if (city === 'london') {
-          this.sfx(1760, 0.5, 'sine', 0.15);
-          this.sfx(1760, 0.5, 'sine', 0.15, 0.22);
-        } else {
-          this.sfx(415, 0.18, 'square', 0.1);
-          this.sfx(523, 0.18, 'square', 0.08);
-          this.sfx(415, 0.3, 'square', 0.1, 0.24);
-          this.sfx(523, 0.3, 'square', 0.08, 0.24);
-        }
+        // The London bus bell: "ding ding".
+        this.sfx(1760, 0.5, 'sine', 0.15);
+        this.sfx(1760, 0.5, 'sine', 0.15, 0.22);
         break;
       case 'perfect':
         [784, 988, 1175, 1568].forEach((f, i) => this.sfx(f, 0.16, 'triangle', 0.1, i * 0.06));

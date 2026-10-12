@@ -6,3 +6,6 @@ dist/
 
 # Design kit (concept art, 175 MB): kept locally, not in git
 west-road-life-visual-kit-v1/
+
+# Play-test screenshots
+tools/out/
