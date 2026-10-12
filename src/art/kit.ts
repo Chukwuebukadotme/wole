@@ -3,6 +3,31 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { C } from './materials.ts';
+import { SURFACES, type Surface } from './surfaces.ts';
+
+/** Kit colours that always mean one surface, so most parts need no explicit surface. */
+const BY_COLOR = new Map<number, Surface>([
+  [C.glass, 'glass'],
+  [C.glassLit, 'glass'],
+  [0xa9cfe0, 'glass'],
+  [0xcfe3ea, 'glass'],
+  [C.tyre, 'rubber'],
+  [C.chrome, 'chrome'],
+  [0xe8b847, 'gold'],
+  [C.lamp, 'lamp'],
+  [C.tail, 'lamp'],
+  [0xffa53a, 'lamp'],
+  [0xffd98e, 'lamp'],
+  [C.black, 'plastic'],
+  [C.leaf, 'foliage'],
+  [C.leafDark, 'foliage'],
+  [0x7cc05a, 'foliage'],
+  [0x5aa04a, 'foliage'],
+  [0x7a5233, 'wood'],
+  [0x4a5468, 'slate'],
+  ...C.skin.map((c): [number, Surface] => [c, 'skin']),
+]);
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 function cached(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
@@ -121,8 +146,8 @@ function flipWinding(g: THREE.BufferGeometry): void {
   }
 }
 
-/** Prepare a part for merging: only position, normal and colour, always indexed. */
-function prepared(src: THREE.BufferGeometry, color: number, m: THREE.Matrix4): THREE.BufferGeometry {
+/** Prepare a part for merging: position, normal, colour and surface, always indexed. */
+function prepared(src: THREE.BufferGeometry, color: number, m: THREE.Matrix4, surface: Surface, limb: readonly [number, number, number]): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', src.getAttribute('position').clone());
   const normal = src.getAttribute('normal');
@@ -141,23 +166,47 @@ function prepared(src: THREE.BufferGeometry, color: number, m: THREE.Matrix4): T
     colors[i * 3 + 2] = tmpColor.b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const props = SURFACES[surface];
+  const surf = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) surf.set(props, i * 4);
+  g.setAttribute('aSurf', new THREE.BufferAttribute(surf, 4));
+  // Limb tag for animated people: limb id (0 = body), pivot height and pivot x.
+  const limbs = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) limbs.set(limb, i * 3);
+  g.setAttribute('aLimb', new THREE.BufferAttribute(limbs, 3));
   return g;
 }
 
 /** A model under construction: coloured parts that merge into one geometry. */
 export class Shape {
   private readonly parts: THREE.BufferGeometry[] = [];
+  /** Surface for parts whose colour does not say otherwise. */
+  readonly surface: Surface;
+  private limbTag: readonly [number, number, number] = [0, 0, 0];
 
-  /** Add a base shape with a colour at a place. */
-  add(geo: THREE.BufferGeometry, color: number, p: Place = {}): this {
-    this.parts.push(prepared(geo, color, matrixFor(p)));
+  constructor(surface: Surface = 'paint') {
+    this.surface = surface;
+  }
+
+  /** Add a base shape with a colour at a place; the surface comes from the colour, or the shape's default. */
+  add(geo: THREE.BufferGeometry, color: number, p: Place = {}, surface?: Surface): this {
+    this.parts.push(prepared(geo, color, matrixFor(p), surface ?? BY_COLOR.get(color) ?? this.surface, this.limbTag));
+    return this;
+  }
+
+  /**
+   * Tag the parts added next as a limb that swings about a pivot (people's legs 1–2, arms 3–4); limb(0) ends it.
+   * The people material uses the tag to animate walking and waving in the vertex shader.
+   */
+  limb(id: number, pivotY = 0, pivotX = 0): this {
+    this.limbTag = [id, pivotY, pivotX];
     return this;
   }
 
   /** Add a part on both sides, mirrored across x = 0 (pass the right-hand x). */
-  pair(geo: THREE.BufferGeometry, color: number, p: Place): this {
-    this.add(geo, color, p);
-    return this.add(geo, color, { ...p, x: -(p.x ?? 0), ry: -(p.ry ?? 0), rz: -(p.rz ?? 0) });
+  pair(geo: THREE.BufferGeometry, color: number, p: Place, surface?: Surface): this {
+    this.add(geo, color, p, surface);
+    return this.add(geo, color, { ...p, x: -(p.x ?? 0), ry: -(p.ry ?? 0), rz: -(p.rz ?? 0) }, surface);
   }
 
   /** Copy another shape's parts in, moved to a place (a negative scale mirrors them). */

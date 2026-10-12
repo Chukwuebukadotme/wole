@@ -13,6 +13,8 @@ interface Pool {
   readonly owners: Handle[];
   /** Atlas cells per instance (sign pools only). */
   readonly cells: THREE.InstancedBufferAttribute | null;
+  /** Animation state per instance (people only): stride phase, swing, wave. */
+  readonly anim: THREE.InstancedBufferAttribute | null;
 }
 
 const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -34,7 +36,7 @@ export class Scatter {
   readonly group = new THREE.Group();
 
   /** Register a kind of object. `shadow` makes it cast shadows; ground pieces only receive. */
-  kind(id: string, geometry: THREE.BufferGeometry, material: THREE.Material, capacity: number, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both', atlas = false): void {
+  kind(id: string, geometry: THREE.BufferGeometry, material: THREE.Material, capacity: number, shadow: 'cast' | 'receive' | 'both' | 'none' = 'both', atlas = false, animated = false): void {
     if (this.pools.has(id)) return;
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.count = 0;
@@ -48,8 +50,14 @@ export class Scatter {
       cells.setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute('aCell', cells);
     }
+    let anim: THREE.InstancedBufferAttribute | null = null;
+    if (animated) {
+      anim = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
+      anim.setUsage(THREE.DynamicDrawUsage);
+      geometry.setAttribute('aAnim', anim);
+    }
     this.group.add(mesh);
-    this.pools.set(id, { mesh, owners: [], cells });
+    this.pools.set(id, { mesh, owners: [], cells, anim });
   }
 
   has(id: string): boolean {
@@ -92,6 +100,7 @@ export class Scatter {
       pool.mesh.getMatrixAt(last, m);
       pool.mesh.setMatrixAt(i, m);
       if (pool.cells) pool.cells.setXYZW(i, pool.cells.getX(last), pool.cells.getY(last), pool.cells.getZ(last), pool.cells.getW(last));
+      if (pool.anim) pool.anim.setXYZW(i, pool.anim.getX(last), pool.anim.getY(last), pool.anim.getZ(last), pool.anim.getW(last));
       const moved = pool.owners[last];
       if (moved) {
         moved.index = i;
@@ -104,6 +113,19 @@ export class Scatter {
     pool.mesh.instanceMatrix.needsUpdate = true;
     if (pool.cells) pool.cells.needsUpdate = true;
     h.index = -1;
+  }
+
+  /** Set an instance's animation (stride phase, swing amplitude, wave). */
+  animate(h: Handle, phase: number, swing: number, wave: number): void {
+    const pool = this.pools.get(h.kind);
+    if (!pool?.anim || h.index < 0) return;
+    pool.anim.setXYZW(h.index, phase, swing, wave, 0);
+    pool.anim.needsUpdate = true;
+  }
+
+  /** Switch shadow casting for the pools whose id matches. */
+  setCastShadow(match: (id: string) => boolean, on: boolean): void {
+    for (const [id, pool] of this.pools) if (match(id)) pool.mesh.castShadow = on;
   }
 
   /** Remove everything (new city or new drive). */

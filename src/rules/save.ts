@@ -3,6 +3,8 @@ import { CITIES, type CityId } from '../config/cities.ts';
 import { FLEETS, type VehicleId } from '../config/vehicles.ts';
 
 export type Mode = 'route' | 'endless';
+/** Graphics quality: 'auto' picks by device and steps down if the frame rate stays low. */
+export type Graphics = 'auto' | 'high' | 'medium' | 'low';
 
 export interface CitySave {
   /** Money earned across all drives in this city's currency. */
@@ -21,7 +23,7 @@ export interface SaveData {
   cities: Record<CityId, CitySave>;
   /** Best money per city, area and mode, keyed "london:river-run:route". */
   bests: Record<string, number>;
-  settings: { music: number; sfx: number; reducedMotion: boolean };
+  settings: { music: number; sfx: number; reducedMotion: boolean; graphics: Graphics };
   /** The practice drive has been finished. */
   tutorialDone: boolean;
   /** Name printed on share cards and challenge links. */
@@ -45,7 +47,7 @@ export function defaultSave(): SaveData {
     passengers: true,
     cities: { london: fresh('london') },
     bests: {},
-    settings: { music: 0.6, sfx: 0.8, reducedMotion: false },
+    settings: { music: 0.6, sfx: 0.8, reducedMotion: false, graphics: 'auto' },
     tutorialDone: false,
     name: '',
     daily: { day: '', best: null, tries: 0 },
@@ -94,6 +96,7 @@ export function parseSave(raw: unknown): SaveData {
       music: unit(settings.music, base.settings.music),
       sfx: unit(settings.sfx, base.settings.sfx),
       reducedMotion: settings.reducedMotion === true,
+      graphics: settings.graphics === 'high' || settings.graphics === 'medium' || settings.graphics === 'low' ? settings.graphics : 'auto',
     },
     tutorialDone: raw.tutorialDone === true,
     name: str(raw.name, '').slice(0, 24),

@@ -19,6 +19,8 @@ export interface Car {
   x: number;
   lane: number;
   v: number;
+  /** Sideways speed while changing lane. */
+  vx: number;
   /** Speed it likes to drive at. */
   cruise: number;
   laneT: number;
@@ -151,7 +153,7 @@ export class Traffic {
     const size = MODEL_SIZE[model];
     const cruise = this.laneSpeed(lane, env, rng) * (model === 'motorbike' ? 1.25 : big ? 0.82 : 1);
     const mesh = this.acquire(key, geo);
-    this.cars.push({ model, key, mesh, w: size.w, l: size.l, d, x: LANES[lane] ?? 0, lane, v: cruise, cruise, laneT: 2 + rng() * 6, flung: null, passed: false });
+    this.cars.push({ model, key, mesh, w: size.w, l: size.l, d, x: LANES[lane] ?? 0, lane, v: cruise, vx: 0, cruise, laneT: 2 + rng() * 6, flung: null, passed: false });
   }
 
   /** Spawn along the road up to `limit`, in a pattern fixed by the seed and the distance. */
@@ -218,9 +220,12 @@ export class Traffic {
         if (options.length) c.lane = pick(options);
       }
     }
+    // Ease across to the new lane and turn the nose the way it is going.
     const target = LANES[c.lane] ?? 0;
-    c.x += clamp(target - c.x, -2.2 * dt, 2.2 * dt);
-    c.mesh.rotation.y = clamp((target - c.x) * 0.06, -0.12, 0.12);
+    const w = 2.2;
+    c.vx = clamp(c.vx + (w * w * (target - c.x) - 2 * w * c.vx) * dt, -3, 3);
+    c.x += c.vx * dt;
+    c.mesh.rotation.y = clamp(-Math.atan2(c.vx, Math.max(4, c.v)) * 0.8, -0.14, 0.14);
   }
 
   private leader(c: Car): Car | null {

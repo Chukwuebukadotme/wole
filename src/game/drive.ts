@@ -68,6 +68,8 @@ interface StopVisit {
   fares: number;
   perfect: boolean;
   clean: boolean;
+  /** Doors are closing: about to pull away. */
+  closing: boolean;
 }
 
 export interface TutorialStep {
@@ -114,6 +116,11 @@ export class Drive {
   private gasTime = 0;
   private laneChanges = 0;
   private prevSpeed = 0;
+  /** Sideways speed and acceleration from lane changes. */
+  vx = 0;
+  ax = 0;
+  /** Forward acceleration this step, m/s². */
+  longAccel = 0;
   private combo = 0;
   private comboT = 0;
   private cardKey = '';
@@ -259,13 +266,24 @@ export class Drive {
       if (this.slot === 3 && !this.bayAhead()) this.slot = this.kerbSlot;
       this.checkStop();
     }
+    // Lane changes: a critically damped spring towards the lane centre, so the vehicle eases in and settles
+    // without overshooting; nimble vehicles have stiffer steering.
     const tx = this.slotX(this.slot);
-    this.x += clamp(tx - this.x, -v.steer * dt, v.steer * dt);
+    const w = v.steer * 1.15;
+    const before = this.vx;
+    this.vx += (w * w * (tx - this.x) - 2 * w * this.vx) * dt;
+    // Sideways speed is limited by forward speed (a vehicle has to roll forward to change lane), with a little
+    // allowance so it can still edge across in slow traffic.
+    const vxMax = Math.min(v.steer * 1.4, 1.2 + this.speed * 0.28);
+    this.vx = clamp(this.vx, -vxMax, vxMax);
+    this.x += this.vx * dt;
+    this.ax = (this.vx - before) / dt;
     this.traffic.update(dt, this.env());
     this.collide();
     this.closePasses();
     this.passengers();
     if (this.setup.mode === 'route' && this.dist >= this.layout.routeEnd) this.finish('complete');
+    this.longAccel = (this.speed - this.prevSpeed) / dt;
     this.prevSpeed = this.speed;
   }
 
@@ -432,7 +450,7 @@ export class Drive {
     const room = this.seats - this.riders.length;
     const on = group.slice(0, Math.max(0, room));
     this.waiting.set(bay.key, group.slice(on.length));
-    this.visit = { stop: bay, off, on, t: 0, step: 0, fares: 0, perfect: Math.abs(this.dist - bay.at) <= 4, clean: this.sinceDamage > 150 };
+    this.visit = { stop: bay, off, on, t: 0, step: 0, fares: 0, perfect: Math.abs(this.dist - bay.at) <= 4, clean: this.sinceDamage > 150, closing: false };
     this.stats.stops++;
     if (this.visit.clean) this.stats.cleanStops++;
     this.phase = 'stopped';
@@ -443,6 +461,11 @@ export class Drive {
       n > 0 ? { title: `BOARDING / ${n} RIDER${n === 1 ? '' : 'S'}`, line: 'Stopped safely. Doors opening.', tone: 'cream' } : { title: 'DOORS OPENING', line: off.length ? 'Passengers getting off.' : 'Nobody waiting here.', tone: 'cream' },
       2.5,
     );
+  }
+
+  /** Whether the passenger door should be open. */
+  get doorOpen(): boolean {
+    return this.phase === 'stopped' && this.visit !== null && !this.visit.closing;
   }
 
   /** Progress of the current stop, 0–1, for the boarding bar. */
@@ -464,9 +487,11 @@ export class Drive {
     const veh = this.setup.vehicle;
     const doorX = side * (Math.abs(this.x) + veh.w / 2 + 0.4);
     const doorD = this.dist + veh.l * 0.3;
+    // Doors open fully before anyone moves; people step off, then on, one at a time; doors close before pulling away.
+    const doorTime = 0.7;
     const pace = 0.5;
     const total = v.off.length + v.on.length;
-    while (v.t >= pace * (v.step + 1) && v.step < total) {
+    while (v.t >= doorTime + pace * v.step && v.step < total) {
       if (v.step < v.off.length) {
         const r = v.off[v.step];
         if (r) {
@@ -477,26 +502,29 @@ export class Drive {
           this.stats.delivered++;
           this.listener.pop(`+${money(this.eco, fare)}`, 'good');
           this.listener.sound('fare');
-          const person = this.crowd.add(r.look, doorX, doorD);
-          person.target = { x: side * (KERB + 3.4 + 2.6), d: doorD + 3 + Math.random() * 6 };
-          person.arrive = () => this.crowd.remove(person);
+          // Step down from the door, cross the pavement, then walk off along it.
+          const kerbX = side * (KERB + 3.4 + 2.4);
+          const person = this.crowd.add(r.look, doorX - side * 0.7, doorD, side < 0 ? -Math.PI / 2 : Math.PI / 2, 0.5);
+          const along = doorD + 14 + Math.random() * 10;
+          this.crowd.walk(person, [{ x: doorX, d: doorD, y: 0.16 }, { x: kerbX, d: doorD + 1.5 }, { x: kerbX - side * Math.random() * 1.5, d: along }], 1.4, () => this.crowd.remove(person));
         }
       } else {
         const w = v.on[v.step - v.off.length];
         if (w) {
+          // Hurry to the kerb by the door, then step up and in.
           w.person.wave = false;
-          w.person.speed = 2.2;
-          w.person.target = { x: doorX, d: doorD };
           const rider: Rider = { destSerial: w.destSerial, destName: w.destName, fromSerial: v.stop.serial, look: w.person.look, late: false };
-          w.person.arrive = () => this.crowd.remove(w.person);
+          this.crowd.walk(w.person, [{ x: doorX, d: doorD }, { x: doorX - side * 0.8, d: doorD, y: 0.5 }], 1.9, () => this.crowd.remove(w.person));
           this.riders.push(rider);
           this.listener.sound('board');
         }
       }
       v.step++;
     }
-    const waitWalk = v.on.length ? 1.2 : 0.4;
-    if (v.step >= total && v.t > pace * total + waitWalk) {
+    const waitWalk = v.on.length ? 1.3 : 0.5;
+    const doneAt = doorTime + pace * total + waitWalk;
+    v.closing = v.step >= total && v.t > doneAt;
+    if (v.closing && v.t > doneAt + doorTime) {
       // Done: perfect-stop tip, delivery card, then pull away.
       if (v.fares > 0) {
         if (v.perfect) {

@@ -20,14 +20,14 @@ function turret(s: Shape, x: number, z: number, base: number, h: number): void {
   s.add(G.cyl(1.5, 1.6, h, 8), STONE, { x, y: base + h / 2, z });
   for (let i = 0; i < 3; i++) s.add(G.box(0.5, 1.6, 0.1), C.glass, { x: x + (x > 0 ? -0.1 : 0.1), y: base + 3 + i * 3.4, z: z + (z > 0 ? 1.5 : -1.5) });
   s.add(G.cyl(1.75, 1.75, 0.5, 8), STONE_DARK, { x, y: base + h, z });
-  s.add(G.cone(1.7, 5.2, 8), ROOF, { x, y: base + h + 2.8, z });
+  s.add(G.cone(1.7, 5.2, 8), ROOF, { x, y: base + h + 2.8, z }, 'slate');
   s.add(G.cyl(0.08, 0.08, 1.4, 6), GOLD, { x, y: base + h + 5.8, z });
   s.add(G.sphere(0.32, 8, 6), GOLD, { x, y: base + h + 6.3, z });
 }
 
 /** One tower of Tower Bridge, centred on the road at z = 0, with an arch the road passes through. */
 function bridgeTower(): Shape {
-  const s = new Shape();
+  const s = new Shape('stone');
   const legX = 10.6;
   // Stone piers standing in the river.
   s.add(G.rbox(34, 10, 14, 1.2), STONE_DARK, { y: -5.6 });
@@ -53,7 +53,7 @@ function bridgeTower(): Shape {
   s.add(G.rbox(24, 10, 9, 0.3), STONE, { y: 35 });
   for (const z of [-4.56, 4.56]) for (let i = -2; i <= 2; i++) s.add(G.box(1.0, 2.8, 0.1), C.glass, { x: i * 3.6, y: 35, z });
   for (const x of [-11.6, 11.6]) for (const z of [-3.6, 3.6]) turret(s, x, z, 15, 26);
-  s.add(G.cone(9.5, 10, 4), ROOF, { y: 45, ry: Math.PI / 4, sx: 1.25, sz: 0.65 });
+  s.add(G.cone(9.5, 10, 4), ROOF, { y: 45, ry: Math.PI / 4, sx: 1.25, sz: 0.65 }, 'slate');
   s.add(G.cyl(0.12, 0.12, 2.4, 6), GOLD, { y: 51 });
   s.add(G.sphere(0.5, 8, 6), GOLD, { y: 52.4 });
   return s;
@@ -61,14 +61,14 @@ function bridgeTower(): Shape {
 
 /** Blue high-level walkway beam with cream lattice crosses. */
 function walkway(len: number): Shape {
-  const s = new Shape();
-  s.add(G.rbox(2.6, 3.4, len, 0.15), BLUE, {});
-  s.add(G.rbox(2.8, 0.3, len, 0.08), shade(BLUE, 0.8), { y: 1.8 });
-  s.add(G.rbox(2.8, 0.3, len, 0.08), shade(BLUE, 0.8), { y: -1.8 });
+  const s = new Shape('stone');
+  s.add(G.rbox(2.6, 3.4, len, 0.15), BLUE, {}, 'metal');
+  s.add(G.rbox(2.8, 0.3, len, 0.08), shade(BLUE, 0.8), { y: 1.8 }, 'metal');
+  s.add(G.rbox(2.8, 0.3, len, 0.08), shade(BLUE, 0.8), { y: -1.8 }, 'metal');
   for (let z = -len / 2 + 2; z < len / 2 - 1; z += 3.2) {
     for (const x of [-1.33, 1.33]) {
-      s.add(G.box(0.08, 3.6, 0.22), C.cream, { x, z, rx: 0.75 });
-      s.add(G.box(0.08, 3.6, 0.22), C.cream, { x, z, rx: -0.75 });
+      s.add(G.box(0.08, 3.6, 0.22), C.cream, { x, z, rx: 0.75 }, 'metal');
+      s.add(G.box(0.08, 3.6, 0.22), C.cream, { x, z, rx: -0.75 }, 'metal');
     }
   }
   s.add(G.rbox(1.2, 1.2, 0.2, 0.1), GOLD, { x: 1.4, z: 0, rz: Math.PI / 4 });
@@ -79,17 +79,17 @@ function walkway(len: number): Shape {
 /** Suspension chain hanging from a tower top to the shore. */
 function chain(s: Shape, x: number, fromZ: number, toZ: number): void {
   const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(x, 30, fromZ), new THREE.Vector3(x, 6, (fromZ + toZ) / 2 + (toZ - fromZ) * 0.05), new THREE.Vector3(x, 5, toZ));
-  s.add(new THREE.TubeGeometry(curve, 20, 0.55, 6, false), BLUE);
+  s.add(new THREE.TubeGeometry(curve, 20, 0.55, 6, false), BLUE, {}, 'metal');
   for (let t = 0.08; t < 0.95; t += 0.07) {
     const p = curve.getPoint(t);
     if (p.y < 1.8) continue;
-    s.add(G.cyl(0.08, 0.08, p.y - 1, 5), BLUE, { x, y: (p.y + 1) / 2, z: p.z });
+    s.add(G.cyl(0.08, 0.08, p.y - 1, 5), BLUE, { x, y: (p.y + 1) / 2, z: p.z }, 'metal');
   }
 }
 
 /** Tower Bridge, centred on z = 0, the road running along Z. */
 export function towerBridge(): Shape {
-  const s = new Shape();
+  const s = new Shape('stone');
   s.merge(bridgeTower(), { z: -TOWER_Z });
   s.merge(bridgeTower(), { z: TOWER_Z });
   for (const x of [-6.3, 6.3]) s.merge(walkway(TOWER_Z * 2 - 9), { x, y: 39 });
@@ -100,7 +100,7 @@ export function towerBridge(): Shape {
     // Small stone towers where the chains meet the shore.
     for (const z of [-TOWER_Z - 94, TOWER_Z + 94]) {
       s.add(G.rbox(2.2, 5, 2.2, 0.2), STONE, { x: side * 9.6, y: 2.5, z });
-      s.add(G.cone(1.6, 2.4, 4), ROOF, { x: side * 9.6, y: 6.2, z, ry: Math.PI / 4 });
+      s.add(G.cone(1.6, 2.4, 4), ROOF, { x: side * 9.6, y: 6.2, z, ry: Math.PI / 4 }, 'slate');
     }
   }
   return s;
@@ -108,7 +108,7 @@ export function towerBridge(): Shape {
 
 /** Distant skyline band for a city, built once; it stays on the horizon as the player drives. */
 export function skyline(_city: CityId, haze: number): THREE.BufferGeometry {
-  const s = new Shape();
+  const s = new Shape('stone');
   const rng = mulberry32(31);
   const tint = (c: number): number => mix(c, haze, 0.55);
   const glass = [0x5d86b8, 0x7fa2c8, 0x9ab3cc, 0x6c8fb0];

@@ -52,6 +52,7 @@ export interface SettingsModel {
   readonly music: number;
   readonly sfx: number;
   readonly reducedMotion: boolean;
+  readonly graphics: 'auto' | 'high' | 'medium' | 'low';
   readonly inDrive: boolean;
 }
 
@@ -162,6 +163,16 @@ export function settingsHtml(m: SettingsModel): string {
       ${slider('music', 'Music', m.music)}
       ${slider('sfx', 'Sound effects', m.sfx)}
       <div class="row"><span>Reduced motion</span><button type="button" class="toggle" data-action="motion" aria-pressed="${m.reducedMotion}">${m.reducedMotion ? 'On' : 'Off'}</button></div>
+      <div class="setting"><span class="disp" style="display:block;margin-bottom:10px">Graphics</span><div class="seg four" role="group" aria-label="Graphics quality">${(
+        [
+          ['auto', 'Auto'],
+          ['high', 'High'],
+          ['medium', 'Medium'],
+          ['low', 'Low'],
+        ] as const
+      )
+        .map(([v, t]) => `<button type="button" data-action="graphics" data-value="${v}" aria-pressed="${m.graphics === v}">${t}</button>`)
+        .join('')}</div></div>
       ${m.inDrive ? '' : '<div class="row"><button type="button" class="linkbtn" style="padding-left:0" data-action="tutorial">Replay tutorial</button></div>'}
     </div>
     <div class="bottom-actions"><button type="button" class="btn disp" data-action="back" data-focus>Done</button></div>

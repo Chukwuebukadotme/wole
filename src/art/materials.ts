@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+import type * as THREE from 'three';
+import { vehicleMaterial, worldMaterial } from './surfaces.ts';
 
 /** Kit colours (West Road Life art language). */
 export const C = {
@@ -27,17 +28,12 @@ export const C = {
   skin: [0x5a3825, 0x7a4a2c, 0x8d5a36, 0xa86f45, 0xc98e63, 0xe2b48c, 0xf1caa5] as const,
 } as const;
 
-let satinMat: THREE.MeshStandardMaterial | null = null;
-let matteMat: THREE.MeshStandardMaterial | null = null;
-
-/** Smooth painted surfaces: vehicles and street furniture. */
-export function satin(): THREE.MeshStandardMaterial {
-  satinMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 });
-  return satinMat;
+/** Smooth painted surfaces: vehicles and street furniture (physical, with clear coat where painted). */
+export function satin(): THREE.MeshPhysicalMaterial {
+  return vehicleMaterial();
 }
 
-/** Brick, stone, cloth and leaves. */
+/** Brick, stone, roads, leaves and people. */
 export function matte(): THREE.MeshStandardMaterial {
-  matteMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0 });
-  return matteMat;
+  return worldMaterial();
 }

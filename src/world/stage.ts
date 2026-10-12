@@ -2,6 +2,7 @@
 // player's vehicle and the camera stay near the origin.
 import * as THREE from 'three';
 import type { CityId } from '../config/cities.ts';
+import { setReflections } from '../art/surfaces.ts';
 import { mulberry32 } from '../rules/util.ts';
 
 interface Palette {
@@ -17,7 +18,14 @@ const PALETTES: Readonly<Record<CityId, Palette>> = {
   london: { top: 0x2f8fe0, horizon: 0xcde7f6, fog: 0xd3e6f1, hemiSky: 0xe4f2ff, hemiGround: 0x8c7d68, sun: 0xfff3df },
 };
 
-export type Quality = 'high' | 'low';
+export type Quality = 'high' | 'medium' | 'low';
+
+/** What each graphics tier spends. Fog closes in to match the draw distance, so scenery never pops in. */
+export const TIERS: Readonly<Record<Quality, { pixels: number; shadow: number; detail: boolean; ahead: number; fogNear: number; fogFar: number }>> = {
+  high: { pixels: 2, shadow: 2048, detail: true, ahead: 430, fogNear: 130, fogFar: 470 },
+  medium: { pixels: 1.5, shadow: 1024, detail: true, ahead: 380, fogNear: 110, fogFar: 420 },
+  low: { pixels: 1, shadow: 0, detail: false, ahead: 300, fogNear: 80, fogFar: 330 },
+};
 
 function cloudTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -62,21 +70,26 @@ export class Stage {
   /** Things that stay with the camera far away: skyline backdrops. */
   readonly far = new THREE.Group();
   readonly fog = new THREE.Fog(0xd3e6f1, 140, 520);
-  private readonly hemi = new THREE.HemisphereLight(0xe4f2ff, 0x8c7d68, 1.6);
-  private readonly sun = new THREE.DirectionalLight(0xfff3df, 2.4);
+  // Sky and ground fill light for everything; vehicles also get reflections from the sky environment map.
+  private readonly hemi = new THREE.HemisphereLight(0xe4f2ff, 0x8c7d68, 1.35);
+  private readonly sun = new THREE.DirectionalLight(0xfff3df, 2.6);
+  /** Sun direction (from the sun towards the ground) and the shadow camera's light-space axes. */
+  private readonly sunDir = new THREE.Vector3(50, -90, -42).normalize();
+  private readonly lightRight = new THREE.Vector3();
+  private readonly lightUp = new THREE.Vector3();
+  private envTarget: THREE.WebGLRenderTarget | null = null;
   private readonly skyUniforms = { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } };
   private readonly sky: THREE.Mesh;
   private readonly clouds = new THREE.Group();
   quality: Quality;
 
   constructor(host: HTMLElement) {
-    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    this.quality = mobile && Math.min(window.screen.width, window.screen.height) < 420 && (navigator.hardwareConcurrency ?? 8) <= 4 ? 'low' : 'high';
+    this.quality = Stage.autoQuality();
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.6 : 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, TIERS[this.quality].pixels));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.id = 'view';
@@ -86,19 +99,21 @@ export class Stage {
     this.scene.fog = this.fog;
     this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.far);
     // Soft upper-left sun; shadows only near the player, where they matter.
-    this.sun.castShadow = this.quality === 'high';
-    const size = 2048;
+    this.sun.castShadow = TIERS[this.quality].shadow > 0;
+    const size = TIERS[this.quality].shadow || 1024;
     this.sun.shadow.mapSize.set(size, size);
     const cam = this.sun.shadow.camera;
     cam.left = -34;
     cam.right = 34;
-    cam.top = 60;
-    cam.bottom = -40;
+    cam.top = 48;
+    cam.bottom = -48;
     cam.near = 10;
-    cam.far = 220;
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.03;
-    this.sun.shadow.radius = 3;
+    cam.far = 240;
+    this.sun.shadow.bias = -0.00025;
+    this.sun.shadow.normalBias = 0.04;
+    this.sun.shadow.radius = 2.5;
+    this.lightRight.crossVectors(this.sunDir, new THREE.Vector3(0, 1, 0)).normalize();
+    this.lightUp.crossVectors(this.lightRight, this.sunDir).normalize();
 
     const skyMat = new THREE.ShaderMaterial({
       uniforms: this.skyUniforms,
@@ -134,15 +149,27 @@ export class Stage {
     this.setCity('london', false);
   }
 
-  /** Lighter rendering for slower devices: fewer pixels and no shadows. */
-  lighten(): void {
-    this.renderer.setPixelRatio(1);
-    this.sun.castShadow = false;
-    this.renderer.shadowMap.enabled = false;
-    this.scene.traverse((o) => {
-      const m = (o as THREE.Mesh).material;
-      if (m && !Array.isArray(m)) m.needsUpdate = true;
-    });
+  /** Default tier for this device: high on desktops, medium on phones and tablets. */
+  static autoQuality(): Quality {
+    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    const small = Math.min(window.screen.width, window.screen.height) < 420 && (navigator.hardwareConcurrency ?? 8) <= 4;
+    return mobile ? (small ? 'low' : 'medium') : 'high';
+  }
+
+  /** Switch graphics tier: resolution, shadow map and fog distance. */
+  setQuality(q: Quality): void {
+    const t = TIERS[q];
+    this.quality = q;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, t.pixels));
+    const shadows = t.shadow > 0;
+    this.sun.castShadow = shadows;
+    if (shadows && this.sun.shadow.mapSize.x !== t.shadow) {
+      this.sun.shadow.mapSize.set(t.shadow, t.shadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.fog.near = t.fogNear;
+    this.fog.far = t.fogFar;
     this.resize();
   }
 
@@ -152,19 +179,56 @@ export class Stage {
     this.skyUniforms.top.value.setHex(p.top);
     this.skyUniforms.horizon.value.setHex(p.horizon);
     this.fog.color.setHex(p.fog);
-    this.fog.near = harmattan ? 70 : 140;
-    this.fog.far = harmattan ? 340 : 520;
+    this.fog.near = harmattan ? 70 : TIERS[this.quality].fogNear;
+    this.fog.far = harmattan ? 340 : TIERS[this.quality].fogFar;
     this.hemi.color.setHex(p.hemiSky);
     this.hemi.groundColor.setHex(p.hemiGround);
     this.sun.color.setHex(p.sun);
-    this.sun.intensity = harmattan ? 2.0 : 2.4;
+    this.sun.intensity = harmattan ? 2.2 : 2.6;
+    this.buildEnvironment(p);
+  }
+
+  /**
+   * Image-based light from the same sky: a gradient dome, the sun's glow and a warm ground, prefiltered so
+   * glass and paint reflect the scene they are in and rough surfaces pick up soft sky light.
+   */
+  private buildEnvironment(p: Palette): void {
+    const envScene = new THREE.Scene();
+    const dome = new THREE.Mesh(this.sky.geometry, this.sky.material);
+    envScene.add(dome);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(900, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9a8c74 }));
+    ground.position.y = -40;
+    envScene.add(ground);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(70, 16, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(p.sun).multiplyScalar(6) }));
+    glow.position.copy(this.sunDir).multiplyScalar(-800);
+    envScene.add(glow);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envTarget?.dispose();
+    this.envTarget = pmrem.fromScene(envScene, 0.035);
+    pmrem.dispose();
+    ground.geometry.dispose();
+    glow.geometry.dispose();
+    // Only glossy things (vehicles, glass, painted metal) use it: reflections matter there, and the big rough
+    // surfaces (roads, walls) look the same with the cheaper sky fill light at half the cost.
+    setReflections(this.envTarget.texture);
   }
 
   /** Move the world for the player's distance and keep the sun's shadows around them. */
   follow(dist: number, x: number, dt: number): void {
     this.world.position.z = dist;
-    this.sun.target.position.set(x, 0, -12);
-    this.sun.position.set(x - 50, 90, 30);
+    // Centre the shadow map just ahead of the player, snapped to whole shadow texels in the world's frame,
+    // so shadows of buildings and props do not shimmer as the world slides past.
+    const cam = this.sun.shadow.camera;
+    const texX = (cam.right - cam.left) / this.sun.shadow.mapSize.x;
+    const texY = (cam.top - cam.bottom) / this.sun.shadow.mapSize.y;
+    const target = new THREE.Vector3(x, 0, -14 - dist);
+    const a = target.dot(this.lightRight);
+    const b = target.dot(this.lightUp);
+    target.addScaledVector(this.lightRight, Math.round(a / texX) * texX - a);
+    target.addScaledVector(this.lightUp, Math.round(b / texY) * texY - b);
+    target.z += dist;
+    this.sun.target.position.copy(target);
+    this.sun.position.copy(target).addScaledVector(this.sunDir, -110);
     this.sky.position.copy(this.camera.position);
     this.far.position.set(this.camera.position.x, 0, this.camera.position.z);
     this.clouds.position.set(this.camera.position.x * 0.9, 0, this.camera.position.z);

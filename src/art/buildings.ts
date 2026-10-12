@@ -50,7 +50,7 @@ function windowBox(s: Shape, x: number, y: number, w: number): void {
 }
 
 function chimney(s: Shape, x: number, y: number, z: number, brick: number): void {
-  s.add(G.rbox(0.9, 1.2, 0.6, 0.06), brick, { x, y: y + 0.6, z });
+  s.add(G.rbox(0.9, 1.2, 0.6, 0.06), brick, { x, y: y + 0.6, z }, 'brick');
   s.add(G.rbox(1.0, 0.12, 0.7, 0.03), shade(brick, 0.8), { x, y: y + 1.2, z });
   s.pair(G.cyl(0.11, 0.13, 0.36, 8), 0xc0623a, { x: 0.2, y: y + 1.42, z });
 }
@@ -63,7 +63,7 @@ const AWNINGS = [0x1f3a6b, 0x2b4a7c, 0x2f6b4f, 0xa8322d, 0x23262d];
 
 /** Brick corner shop: shopfront with an awning, sash windows, window boxes and chimneys. */
 function londonShop(rng: Rng): BuildingArt {
-  const s = new Shape();
+  const s = new Shape('plaster');
   const brick = pick(BRICKS, rng);
   const trim = C.cream;
   const floors = rng() < 0.5 ? 3 : 4;
@@ -71,14 +71,14 @@ function londonShop(rng: Rng): BuildingArt {
   const d = 8;
   const fh = 3.2;
   const h = 4 + (floors - 1) * fh;
-  s.add(G.rbox(w, h, d, 0.12), brick, { y: h / 2, z: -d / 2 });
+  s.add(G.rbox(w, h, d, 0.12), brick, { y: h / 2, z: -d / 2 }, 'brick');
   // Shopfront.
   const awning = pick(AWNINGS, rng);
-  s.add(G.rbox(w - 0.6, 3.4, 0.3, 0.06), awning, { y: 1.75, z: 0.1 });
+  s.add(G.rbox(w - 0.6, 3.4, 0.3, 0.06), awning, { y: 1.75, z: 0.1 }, 'cloth');
   s.add(G.box(w - 1.6, 2.1, 0.06), WARM, { x: -0.4, y: 1.45, z: 0.27 });
-  for (let x = -w / 2 + 1.4; x < w / 2 - 1.8; x += 1.4) s.add(G.box(0.08, 2.1, 0.06), awning, { x, y: 1.45, z: 0.3 });
+  for (let x = -w / 2 + 1.4; x < w / 2 - 1.8; x += 1.4) s.add(G.box(0.08, 2.1, 0.06), awning, { x, y: 1.45, z: 0.3 }, 'cloth');
   s.add(G.box(0.9, 2.2, 0.06), shade(awning, 0.7), { x: w / 2 - 1.2, y: 1.1, z: 0.29 });
-  s.add(G.rbox(w - 0.4, 0.5, 1.5, 0.08), awning, { y: 3.15, z: 0.85, rx: 0.32 });
+  s.add(G.rbox(w - 0.4, 0.5, 1.5, 0.08), awning, { y: 3.15, z: 0.85, rx: 0.32 }, 'cloth');
   s.add(G.rbox(w - 0.3, 0.16, 0.36, 0.04), trim, { y: 3.65, z: 0.16 });
   const signs: SignSlot[] = [{ x: 0, y: 3.88, z: 0.32, w: Math.min(5.2, w - 1.4), h: 0.62, kind: 'shop' }];
   // Upper floors.
@@ -101,12 +101,12 @@ function londonShop(rng: Rng): BuildingArt {
 
 /** Terraced townhouse: white stucco ground floor, coloured door, railings, tall windows. */
 function londonTerrace(rng: Rng): BuildingArt {
-  const s = new Shape();
+  const s = new Shape('plaster');
   const brick = pick([...BRICKS, ...STOCK], rng);
   const w = 6;
   const d = 10;
   const h = 13;
-  s.add(G.rbox(w, h, d, 0.08), brick, { y: h / 2, z: -d / 2 });
+  s.add(G.rbox(w, h, d, 0.08), brick, { y: h / 2, z: -d / 2 }, 'brick');
   s.add(G.rbox(w + 0.02, 3.6, d, 0.06), C.white, { y: 1.8, z: -d / 2 + 0.02 });
   s.add(G.rbox(1.2, 2.4, 0.2, 0.05), C.white, { x: -1.3, y: 1.4, z: 0.12 });
   s.add(G.rbox(0.9, 2.1, 0.08, 0.03), pick(DOORS, rng), { x: -1.3, y: 1.25, z: 0.22 });
@@ -114,8 +114,8 @@ function londonTerrace(rng: Rng): BuildingArt {
   sash(s, 1.2, 1.9, 1.3, 1.9, C.white, false);
   for (let f = 0; f < 3; f++) for (const x of [-1.3, 1.2]) sash(s, x, 5.2 + f * 2.8, 1.1, 1.9, C.cream);
   // Black railings and a step.
-  for (let x = -2.8; x <= 2.8; x += 0.24) if (Math.abs(x + 1.3) > 0.55) s.add(G.box(0.04, 0.9, 0.04), C.black, { x, y: 0.45, z: 0.75 });
-  s.add(G.box(5.8, 0.06, 0.06), C.black, { y: 0.88, z: 0.75 });
+  for (let x = -2.8; x <= 2.8; x += 0.24) if (Math.abs(x + 1.3) > 0.55) s.add(G.box(0.04, 0.9, 0.04), C.black, { x, y: 0.45, z: 0.75 }, 'metal');
+  s.add(G.box(5.8, 0.06, 0.06), C.black, { y: 0.88, z: 0.75 }, 'metal');
   s.add(G.rbox(w + 0.3, 0.36, 0.5, 0.06), C.cream, { y: h - 0.1 });
   s.add(G.rbox(w - 0.2, 1.4, d - 2, 0.1), SLATE, { y: h + 0.5, z: -d / 2 });
   chimney(s, 0, h + 1.1, -d / 2, brick);
@@ -124,13 +124,13 @@ function londonTerrace(rng: Rng): BuildingArt {
 
 /** Pub on a corner: dark painted ground floor with gold lettering board, brick above, hanging baskets. */
 function londonPub(rng: Rng): BuildingArt {
-  const s = new Shape();
+  const s = new Shape('plaster');
   const brick = pick(BRICKS, rng);
   const paint = pick([0x1f3a2f, 0x1f2f4e, 0x5a1f24], rng);
   const w = 9;
   const d = 9;
   const h = 10.5;
-  s.add(G.rbox(w, h, d, 0.12), brick, { y: h / 2, z: -d / 2 });
+  s.add(G.rbox(w, h, d, 0.12), brick, { y: h / 2, z: -d / 2 }, 'brick');
   s.add(G.rbox(w + 0.1, 3.9, 0.36, 0.06), paint, { y: 1.95, z: 0.12 });
   for (const x of [-2.8, 0.2, 3.0]) s.add(G.box(2.0, 2.0, 0.06), WARM, { x, y: 1.6, z: 0.32 });
   s.add(G.rbox(w + 0.2, 0.7, 0.4, 0.05), paint, { y: 3.55, z: 0.22 });
@@ -147,7 +147,7 @@ function londonPub(rng: Rng): BuildingArt {
 
 /** Newer block of flats: cream panels with glass bands and balconies. */
 function londonModern(rng: Rng): BuildingArt {
-  const s = new Shape();
+  const s = new Shape('plaster');
   const w = 12;
   const d = 12;
   const floors = 5 + Math.floor(rng() * 3);
@@ -167,14 +167,14 @@ function londonModern(rng: Rng): BuildingArt {
 
 /** Wapping warehouse: tall brick with arched windows, loading doors and a crane jib. */
 function londonWarehouse(rng: Rng): BuildingArt {
-  const s = new Shape();
+  const s = new Shape('plaster');
   const brick = pick([...BRICKS, ...STOCK], rng);
   const trim = pick([C.cream, 0xe9c48c], rng);
   const w = pick([12, 14], rng);
   const d = 14;
   const floors = 5;
   const h = floors * 3.4 + 0.6;
-  s.add(G.rbox(w, h, d, 0.1), brick, { y: h / 2, z: -d / 2 });
+  s.add(G.rbox(w, h, d, 0.1), brick, { y: h / 2, z: -d / 2 }, 'brick');
   const cols = Math.round(w / 2.6);
   for (let f = 0; f < floors; f++) {
     const y = 1.6 + f * 3.4;
@@ -184,15 +184,15 @@ function londonWarehouse(rng: Rng): BuildingArt {
       archWindow(s, x, y, 1.2, 1.6, trim);
     }
     // Loading doors stacked up the middle, navy painted.
-    s.add(G.rbox(1.5, 2.3, 0.14, 0.04), C.ink, { y: y + 0.2, z: 0.07 });
-    s.add(G.box(1.7, 0.12, 0.6), C.black, { y: y - 1.0, z: 0.3 });
+    s.add(G.rbox(1.5, 2.3, 0.14, 0.04), C.ink, { y: y + 0.2, z: 0.07 }, 'paint');
+    s.add(G.box(1.7, 0.12, 0.6), C.black, { y: y - 1.0, z: 0.3 }, 'metal');
   }
   // Crane jib with its hook.
   s.add(G.rbox(0.25, 0.25, 2.2, 0.05), C.ink, { y: h - 1.2, z: 1.0 });
   s.add(G.rbox(0.18, 1.6, 0.18, 0.04), C.ink, { y: h - 1.9, z: 0.15, rx: 0.6 });
-  s.add(G.box(0.03, 1.4, 0.03), C.black, { y: h - 1.9, z: 2.0 });
-  s.add(G.torus(0.12, 0.04, 5, 8, Math.PI * 1.4), C.black, { y: h - 2.6, z: 2.0 });
-  s.add(G.rbox(w + 0.2, 0.5, 0.4, 0.05), shade(brick, 0.85), { y: h, z: 0 });
+  s.add(G.box(0.03, 1.4, 0.03), C.black, { y: h - 1.9, z: 2.0 }, 'metal');
+  s.add(G.torus(0.12, 0.04, 5, 8, Math.PI * 1.4), C.black, { y: h - 2.6, z: 2.0 }, 'metal');
+  s.add(G.rbox(w + 0.2, 0.5, 0.4, 0.05), shade(brick, 0.85), { y: h, z: 0 }, 'brick');
   s.add(G.rbox(w - 0.4, 2.2, d - 1, 0.1), SLATE, { y: h + 1.0, z: -d / 2, sz: 0.9 });
   for (let x = -w / 2 + 0.6; x <= w / 2 - 0.6; x += 3) s.add(G.sphere(0.25, 8, 6), 0xd9cdb6, { x, y: 0.5, z: 0.4 });
   return { shape: s, w, signs: [] };

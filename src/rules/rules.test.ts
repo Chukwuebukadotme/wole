@@ -72,6 +72,8 @@ test('saves survive a round trip and damaged fields fall back', () => {
   assert.equal(junk.cities.london.area, 'river-run');
   assert.equal(junk.cities.london.bank, 0);
   assert.equal(junk.settings.music, 1);
+  assert.equal(junk.settings.graphics, 'auto');
+  assert.equal(parseSave({ settings: { graphics: 'low' } }).settings.graphics, 'low');
   assert.deepEqual(junk.bests, {});
 });
 

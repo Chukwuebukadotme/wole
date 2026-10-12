@@ -52,26 +52,26 @@ function hairShape(s: Shape, look: Look, headY: number, r: number): void {
   const hc = look.hairColor;
   switch (look.hair) {
     case 'short':
-      s.add(G.dome(r * 1.04, 10, 4), hc, { y: headY + r * 0.08, sy: 0.75 });
+      s.add(G.dome(r * 1.04, 10, 4), hc, { y: headY + r * 0.08, sy: 0.75 }, 'hair');
       break;
     case 'afro':
-      s.add(G.sphere(r * 1.28, 10, 6), hc, { y: headY + r * 0.35, z: r * 0.15 });
+      s.add(G.sphere(r * 1.28, 10, 6), hc, { y: headY + r * 0.35, z: r * 0.15 }, 'hair');
       break;
     case 'puffs':
-      s.add(G.dome(r * 1.03, 10, 4), hc, { y: headY + r * 0.1, sy: 0.7 });
-      s.pair(G.sphere(r * 0.52, 7, 5), hc, { x: r * 0.82, y: headY + r * 0.7 });
+      s.add(G.dome(r * 1.03, 10, 4), hc, { y: headY + r * 0.1, sy: 0.7 }, 'hair');
+      s.pair(G.sphere(r * 0.52, 7, 5), hc, { x: r * 0.82, y: headY + r * 0.7 }, 'hair');
       break;
     case 'braids':
-      s.add(G.dome(r * 1.05, 10, 4), hc, { y: headY + r * 0.06, sy: 0.82 });
-      for (let i = 0; i < 6; i++) s.add(G.capsule(r * 0.13, r * 1.3, 1, 4), hc, { x: (i - 2.5) * r * 0.28, y: headY - r * 0.55, z: r * 0.62 });
+      s.add(G.dome(r * 1.05, 10, 4), hc, { y: headY + r * 0.06, sy: 0.82 }, 'hair');
+      for (let i = 0; i < 6; i++) s.add(G.capsule(r * 0.13, r * 1.3, 1, 4), hc, { x: (i - 2.5) * r * 0.28, y: headY - r * 0.55, z: r * 0.62 }, 'hair');
       break;
     case 'bun':
-      s.add(G.dome(r * 1.04, 10, 4), hc, { y: headY + r * 0.06, sy: 0.82 });
-      s.add(G.sphere(r * 0.45, 7, 5), hc, { y: headY + r * 0.9, z: r * 0.45 });
+      s.add(G.dome(r * 1.04, 10, 4), hc, { y: headY + r * 0.06, sy: 0.82 }, 'hair');
+      s.add(G.sphere(r * 0.45, 7, 5), hc, { y: headY + r * 0.9, z: r * 0.45 }, 'hair');
       break;
     case 'long':
-      s.add(G.dome(r * 1.06, 10, 4), hc, { y: headY + r * 0.05, sy: 0.85 });
-      s.add(G.rbox(r * 1.9, r * 1.8, r * 0.7, r * 0.3), hc, { y: headY - r * 0.7, z: r * 0.55 });
+      s.add(G.dome(r * 1.06, 10, 4), hc, { y: headY + r * 0.05, sy: 0.85 }, 'hair');
+      s.add(G.rbox(r * 1.9, r * 1.8, r * 0.7, r * 0.3), hc, { y: headY - r * 0.7, z: r * 0.55 }, 'hair');
       break;
     case 'cap':
       s.add(G.dome(r * 1.06, 10, 4), look.pattern, { y: headY + r * 0.12, sy: 0.72 });
@@ -100,7 +100,7 @@ function hairShape(s: Shape, look: Look, headY: number, r: number): void {
 
 /** Standing adult facing -Z, feet on the ground. */
 export function makePerson(look: Look): Shape {
-  const s = new Shape();
+  const s = new Shape('cloth');
   const k = look.height;
   const legLen = 0.6 * k;
   const hipY = 0.1 + legLen + 0.1;
@@ -109,11 +109,15 @@ export function makePerson(look: Look): Shape {
   const shoulderY = torsoY + torsoH / 2 - 0.06;
   const headR = 0.19;
   const headY = shoulderY + 0.1 + headR;
-  // Shoes and legs.
-  s.pair(G.rbox(0.13, 0.09, 0.27, 0.045), look.shoes, { x: 0.1, y: 0.045, z: -0.04 });
+  // Shoes and legs, each tagged as a limb that swings from the hip.
   const legColor = look.outfit === 'dress' || look.outfit === 'shorts' ? look.skin : look.bottom;
-  s.pair(G.capsule(0.085, legLen, 1, 6), legColor, { x: 0.1, y: 0.1 + legLen / 2 + 0.04 });
-  if (look.outfit === 'shorts') s.pair(G.capsule(0.1, legLen * 0.35, 2, 6), look.bottom, { x: 0.1, y: hipY - legLen * 0.2 });
+  for (const [id, x] of [[1, -0.1], [2, 0.1]] as const) {
+    s.limb(id, hipY - 0.04, x);
+    s.add(G.rbox(0.13, 0.09, 0.27, 0.045), look.shoes, { x, y: 0.045, z: -0.04 }, 'plastic');
+    s.add(G.capsule(0.085, legLen, 1, 6), legColor, { x, y: 0.1 + legLen / 2 + 0.04 });
+    if (look.outfit === 'shorts') s.add(G.capsule(0.1, legLen * 0.35, 2, 6), look.bottom, { x, y: hipY - legLen * 0.2 });
+  }
+  s.limb(0);
   // Body and clothes.
   s.add(G.rbox(0.38, 0.22, 0.25, 0.09), look.outfit === 'dress' || look.outfit === 'kaftan' ? look.top : look.bottom, { y: hipY });
   s.add(G.rbox(0.44, torsoH, 0.27, 0.12), look.top, { y: torsoY });
@@ -130,10 +134,14 @@ export function makePerson(look: Look): Shape {
   } else {
     s.add(G.rbox(0.45, 0.06, 0.28, 0.03), look.pattern, { y: torsoY + torsoH * 0.12 });
   }
-  // Arms hang slightly out from the body.
+  // Arms hang slightly out from the body and swing from the shoulder.
   const armLen = 0.46 * k;
-  s.pair(G.capsule(0.068, armLen, 1, 5), look.top, { x: 0.28, y: shoulderY - armLen / 2 + 0.02, rz: 0.1 });
-  s.pair(G.sphere(0.07, 6, 4), look.skin, { x: 0.31, y: shoulderY - armLen - 0.02 });
+  for (const [id, sx] of [[3, -1], [4, 1]] as const) {
+    s.limb(id, shoulderY - 0.02, sx * 0.24);
+    s.add(G.capsule(0.068, armLen, 1, 5), look.top, { x: sx * 0.28, y: shoulderY - armLen / 2 + 0.02, rz: sx * 0.1 });
+    s.add(G.sphere(0.07, 6, 4), look.skin, { x: sx * 0.31, y: shoulderY - armLen - 0.02 });
+  }
+  s.limb(0);
   // Neck, head and a friendly face.
   s.add(G.cyl(0.065, 0.075, 0.1, 6), look.skin, { y: shoulderY + 0.07 });
   s.add(G.sphere(headR, 10, 7), look.skin, { y: headY });
@@ -177,7 +185,7 @@ export function makePerson(look: Look): Shape {
 
 /** Rider seated on a motorcycle, leaning forward, with a helmet; placed relative to the bike's seat. */
 export function makeRider(jacket: number, trousers: number, helmet: number, skin: number): Shape {
-  const s = new Shape();
+  const s = new Shape('cloth');
   s.pair(G.capsule(0.09, 0.36, 3, 8), trousers, { x: 0.17, y: 1.08, z: -0.16, rx: Math.PI / 2 - 0.3 });
   s.pair(G.capsule(0.08, 0.36, 3, 8), trousers, { x: 0.2, y: 0.8, z: -0.36, rx: 0.15 });
   s.pair(G.rbox(0.13, 0.1, 0.26, 0.04), C.white, { x: 0.2, y: 0.58, z: -0.42 });
@@ -186,7 +194,7 @@ export function makeRider(jacket: number, trousers: number, helmet: number, skin
   s.pair(G.capsule(0.07, 0.42, 3, 8), jacket, { x: 0.25, y: 1.42, z: -0.38, rx: -1.1 });
   s.pair(G.sphere(0.07, 8, 6), 0x2a2d34, { x: 0.3, y: 1.26, z: -0.68 });
   s.add(G.cyl(0.06, 0.07, 0.08, 8), skin, { y: 1.8, z: -0.2 });
-  s.add(G.sphere(0.21, 16, 12), helmet, { y: 1.95, z: -0.24 });
+  s.add(G.sphere(0.21, 16, 12), helmet, { y: 1.95, z: -0.24 }, 'paint');
   s.add(G.rbox(0.3, 0.13, 0.12, 0.05), C.glass, { y: 1.93, z: -0.42 });
   return s;
 }

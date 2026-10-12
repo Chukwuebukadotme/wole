@@ -84,7 +84,7 @@ function mirrorPair(s: Shape, x: number, y: number, z: number, body: number): vo
 
 /** Dark arch above each wheel, so wheels read clearly against the body. */
 function arches(s: Shape, wheels: readonly WheelSpot[], x: number, depth: number): void {
-  for (const w of wheels) if (w.x > 0) s.pair(G.rbox(depth, w.r * 1.1, w.r * 2.5, 0.06), shade(DARK, 1.05), { x, y: w.r * 1.05, z: w.z });
+  for (const w of wheels) if (w.x > 0) s.pair(G.rbox(depth, w.r * 1.1, w.r * 2.5, 0.06), shade(DARK, 1.05), { x, y: w.r * 1.05, z: w.z }, 'plastic');
 }
 
 // ---------- Models ----------
@@ -93,7 +93,7 @@ function doubledecker(p: Paint, side: -1 | 1): VehicleParts {
   const red = p.body;
   const trim = shade(red, 0.82);
   s.add(G.rbox(2.4, 3.72, 10, 0.34, 3), red, { y: 0.42 + 1.86 });
-  s.add(G.rbox(2.42, 0.34, 9.7, 0.12), 0x1c2230, { y: 0.52 });
+  s.add(G.rbox(2.42, 0.34, 9.7, 0.12), 0x1c2230, { y: 0.52 }, 'plastic');
   // Window bands on both decks, with red pillars between the panes.
   s.pair(G.rbox(0.06, 0.96, 8.1, 0.05), C.glass, { x: 1.2, y: 1.74, z: 0.6 });
   s.pair(G.rbox(0.06, 0.9, 9.1, 0.05), C.glass, { x: 1.2, y: 3.3, z: 0.05 });
@@ -107,15 +107,15 @@ function doubledecker(p: Paint, side: -1 | 1): VehicleParts {
   headlight(s, 0.82, 0.96, -5.03, 0.15);
   headlight(s, -0.82, 0.96, -5.03, 0.15);
   s.pair(G.rbox(0.18, 0.08, 0.05, 0.02), 0xffa53a, { x: 0.82, y: 0.72, z: -5.02 });
-  s.add(G.rbox(2.3, 0.3, 0.2, 0.08), 0x1c2230, { y: 0.56, z: -4.98 });
+  s.add(G.rbox(2.3, 0.3, 0.2, 0.08), 0x1c2230, { y: 0.56, z: -4.98 }, 'plastic');
   // Rear: stacked navy windows, a vent, tail lamps and a yellow plate.
   s.add(G.rbox(1.92, 0.86, 0.06, 0.06), C.glass, { y: 1.88, z: 5.0 });
   s.add(G.rbox(1.92, 0.82, 0.06, 0.06), C.glass, { y: 3.32, z: 5.0 });
   s.add(G.rbox(1.3, 0.28, 0.05, 0.05), shade(red, 0.6), { y: 1.0, z: 5.02 });
-  for (let i = 0; i < 4; i++) s.add(G.box(1.2, 0.03, 0.02), 0x1c2230, { y: 0.92 + i * 0.06, z: 5.05 });
+  for (let i = 0; i < 4; i++) s.add(G.box(1.2, 0.03, 0.02), 0x1c2230, { y: 0.92 + i * 0.06, z: 5.05 }, 'plastic');
   s.pair(G.rbox(0.22, 0.56, 0.06, 0.05), C.tail, { x: 1.0, y: 1.08, z: 5.02 });
   s.add(G.rbox(0.6, 0.18, 0.05, 0.03), C.plate, { y: 0.66, z: 5.04 });
-  s.add(G.rbox(2.3, 0.28, 0.2, 0.08), 0x1c2230, { y: 0.56, z: 4.98 });
+  s.add(G.rbox(2.3, 0.28, 0.2, 0.08), 0x1c2230, { y: 0.56, z: 4.98 }, 'plastic');
   mirrorPair(s, 1.34, 2.5, -4.7, DARK);
   const wheels: WheelSpot[] = [
     { x: 1.04, z: -3.25, r: 0.52, w: 0.36 },
@@ -239,7 +239,7 @@ function profileBody(p: Profile, paint: Paint, side: -1 | 1): { s: Shape; wheels
   s.add(extrudeProfile(`${p.key}-low`, lowerShape(p), p.w, 0.12), paint.body);
   s.add(extrudeProfile(`${p.key}-house`, houseShape(p), houseW, 0.11), paint.body);
   // Dark underside, so the arches look deep rather than see-through.
-  s.add(G.rbox(p.w - 0.3, p.wheelR * 1.6, p.l - 0.5, 0.1), 0x1c1f25, { y: p.c + p.wheelR * 0.4 });
+  s.add(G.rbox(p.w - 0.3, p.wheelR * 1.6, p.l - 0.5, 0.1), 0x1c1f25, { y: p.c + p.wheelR * 0.4 }, 'plastic');
   // Windscreen and rear window follow the glasshouse slopes.
   const y0 = p.belt + 0.03;
   const y1 = p.roofFront[1] - 0.06;
@@ -309,7 +309,7 @@ function blackcab(p: Paint, side: -1 | 1): VehicleParts {
   carFace(s, CAB, p, 'round');
   // The cab's chrome grille and amber roof sign.
   s.add(G.rbox(0.62, 0.4, 0.06, 0.06), C.chrome, { y: 0.78, z: -2.29 });
-  for (let i = 0; i < 4; i++) s.add(G.box(0.52, 0.03, 0.02), 0x30343c, { y: 0.64 + i * 0.09, z: -2.33 });
+  for (let i = 0; i < 4; i++) s.add(G.box(0.52, 0.03, 0.02), 0x30343c, { y: 0.64 + i * 0.09, z: -2.33 }, 'plastic');
   s.add(G.rbox(0.56, 0.17, 0.26, 0.06), p.accent, { y: 1.9, z: 0.1 });
   s.add(G.rbox(0.4, 0.06, 0.27, 0.03), shade(p.accent, 1.3), { y: 1.91, z: 0.1 });
   return { body: s, wheels, door, sticker: null };
@@ -333,7 +333,7 @@ function suv(p: Paint, side: -1 | 1): VehicleParts {
   s.pair(G.rbox(0.06, 0.2, 2.2, 0.05), p.accent, { x: 1.0, y: 0.6 });
   s.pair(G.rbox(0.06, 0.06, 2.4, 0.03), DARK, { x: 0.72, y: 2.0, z: 0.75 });
   s.add(G.rbox(1.0, 0.3, 0.06, 0.06), C.chrome, { y: 0.92, z: -2.42 });
-  for (let i = 0; i < 3; i++) s.add(G.box(0.9, 0.04, 0.02), 0x30343c, { y: 0.84 + i * 0.09, z: -2.46 });
+  for (let i = 0; i < 3; i++) s.add(G.box(0.9, 0.04, 0.02), 0x30343c, { y: 0.84 + i * 0.09, z: -2.46 }, 'plastic');
   // Spare wheel on the tailgate, under a painted cover.
   s.add(G.cyl(0.38, 0.38, 0.18, 20), DARK, { y: 0.98, z: 2.46, rx: Math.PI / 2 });
   s.add(G.cyl(0.31, 0.34, 0.08, 20), p.body, { y: 0.98, z: 2.57, rx: Math.PI / 2 });
@@ -345,7 +345,7 @@ function bike(p: Paint, jacket: number, trousers: number, helmet: number, skin: 
   s.add(G.rbox(0.42, 0.3, 0.64, 0.14), p.body, { y: 0.98, z: -0.12 });
   s.add(G.rbox(0.34, 0.12, 0.62, 0.06), DARK, { y: 1.05, z: 0.4 });
   s.add(G.rbox(0.3, 0.16, 0.42, 0.08), p.body, { y: 1.02, z: 0.8 });
-  s.add(G.rbox(0.34, 0.34, 0.48, 0.08), 0x5b616b, { y: 0.62 });
+  s.add(G.rbox(0.34, 0.34, 0.48, 0.08), 0x5b616b, { y: 0.62 }, 'metal');
   s.add(G.cyl(0.06, 0.06, 0.72, 10), C.chrome, { x: 0.2, y: 0.5, z: 0.45, rx: Math.PI / 2 });
   s.pair(G.cyl(0.03, 0.03, 0.72, 8), DARK, { x: 0.09, y: 0.82, z: -0.6, rx: 0.32 });
   s.add(G.rbox(0.16, 0.06, 0.5, 0.03), p.body, { y: 0.74, z: -0.72 });

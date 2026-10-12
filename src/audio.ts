@@ -236,7 +236,38 @@ export class SoundBoard {
     n.gain.gain.setTargetAtTime(throttle ? 0.06 : 0.04, t, 0.1);
   }
 
+  /** Tyre and brake noise while braking hard (0–1). */
+  brakes(level: number): void {
+    const c = this.ctx;
+    const out = this.sfxGain;
+    if (!c || !out || !this.noise) return;
+    if (level > 0.55 && !this.brakeNodes) {
+      const src = c.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const f = c.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 1700;
+      f.Q.value = 3;
+      const gain = c.createGain();
+      gain.gain.value = 0.0001;
+      src.connect(f).connect(gain).connect(out);
+      src.start();
+      this.brakeNodes = { src, gain };
+    }
+    const n = this.brakeNodes;
+    if (!n) return;
+    const t = c.currentTime;
+    n.gain.gain.setTargetAtTime(level > 0.55 ? (level - 0.5) * 0.12 : 0.0001, t, 0.05);
+    if (level <= 0.05) {
+      n.src.stop(t + 0.2);
+      this.brakeNodes = null;
+    }
+  }
+  private brakeNodes: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+
   engineOff(): void {
+    this.brakes(0);
     const n = this.engineNodes;
     const c = this.ctx;
     if (!n || !c) return;

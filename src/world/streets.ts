@@ -11,11 +11,11 @@ import { signAtlas, waterTexture, type Cell } from '../art/textures.ts';
 import { hashString } from '../rules/social.ts';
 import { mulberry32, pick, type Rng } from '../rules/util.ts';
 import { BUILD_LINE, KERB, Layout, TILE } from './layout.ts';
+import { blobGeometry, blobMaterial } from './blobs.ts';
 import { Scatter, at, atlasMaterial, type Handle } from './scatter.ts';
 import type { Stage } from './stage.ts';
 
-/** How far ahead and behind the player scenery exists. */
-const AHEAD = 420;
+/** How far behind the player scenery stays (behind the camera); how far ahead is set by the graphics tier. */
 const BEHIND = 48;
 const BAY_DEPTH = 3.4;
 
@@ -57,38 +57,47 @@ const weightedPick = <T,>(items: readonly (readonly [T, number])[], rng: Rng): T
 
 // ---------- Road pieces (built for the right-hand side, mirrored for the left) ----------
 function roadPiece(): Shape {
-  const s = new Shape();
+  const s = new Shape('asphalt');
   const asphalt = 0x5b616c;
   s.add(G.box(KERB * 2, 0.1, TILE), asphalt, { y: -0.05 });
-  for (const x of [-1.7, 1.7]) for (let z = -TILE / 2 + 1.5; z < TILE / 2; z += 6) s.add(G.box(0.16, 0.02, 3), C.white, { x, y: 0.005, z });
-  for (const x of [-KERB + 0.3, KERB - 0.3]) s.add(G.box(0.14, 0.02, TILE), C.white, { x, y: 0.005 });
+  for (const x of [-1.7, 1.7]) for (let z = -TILE / 2 + 1.5; z < TILE / 2; z += 6) s.add(G.box(0.16, 0.02, 3), C.white, { x, y: 0.005, z }, 'marking');
+  for (const x of [-KERB + 0.3, KERB - 0.3]) s.add(G.box(0.14, 0.02, TILE), C.white, { x, y: 0.005 }, 'marking');
   // A little wear down the middle of each lane.
   for (const x of [-3.4, 0, 3.4]) s.add(G.box(1.4, 0.01, TILE), shade(asphalt, 0.94), { x, y: 0.002 });
   return s;
 }
 
 function kerb(s: Shape, _city: CityId, x: number, len: number, z = 0, ry = 0): void {
-  s.add(G.rbox(0.32, 0.2, len, 0.04), 0xc8c1b4, { x, y: 0.1, z, ry });
+  s.add(G.rbox(0.32, 0.2, len, 0.04), 0xc8c1b4, { x, y: 0.1, z, ry }, 'stone');
 }
 
 function pavement(s: Shape, _city: CityId, from: number, to: number): void {
   const slab = 0xdcd2bd;
   const joint = shade(slab, 0.92);
-  s.add(G.box(to - from, 0.16, TILE), slab, { x: (from + to) / 2, y: 0.08 });
-  for (let z = -TILE / 2 + 1.5; z < TILE / 2; z += 1.5) s.add(G.box(to - from, 0.012, 0.05), joint, { x: (from + to) / 2, y: 0.165, z });
-  for (let x = from + 1.5; x < to - 0.2; x += 1.5) s.add(G.box(0.05, 0.012, TILE), joint, { x, y: 0.165 });
+  s.add(G.box(to - from, 0.16, TILE), slab, { x: (from + to) / 2, y: 0.08 }, 'paving');
+  for (let z = -TILE / 2 + 1.5; z < TILE / 2; z += 1.5) s.add(G.box(to - from, 0.012, 0.05), joint, { x: (from + to) / 2, y: 0.165, z }, 'paving');
+  for (let x = from + 1.5; x < to - 0.2; x += 1.5) s.add(G.box(0.05, 0.012, TILE), joint, { x, y: 0.165 }, 'paving');
+}
+
+/** Darker bands where walls meet the pavement and along the gutter: cheap, baked ambient occlusion. */
+function grime(s: Shape, wallX: number, slab: number): void {
+  const bands = [0.74, 0.84, 0.92, 0.97] as const;
+  bands.forEach((k, i) => s.add(G.box(0.45, 0.004, TILE), shade(slab, k), { x: wallX - 0.225 - i * 0.45, y: 0.168 }, 'paving'));
+  s.add(G.box(0.35, 0.004, TILE), shade(0x5b616c, 0.82), { x: KERB - 0.2, y: 0.004 }, 'asphalt');
+  s.add(G.box(0.3, 0.004, TILE), shade(0x5b616c, 0.9), { x: KERB - 0.5, y: 0.004 }, 'asphalt');
 }
 
 function ground(s: Shape, _city: CityId): void {
-  s.add(G.box(110, 0.1, TILE), 0xc4b9a2, { x: BUILD_LINE + 55, y: 0.02 });
+  s.add(G.box(110, 0.1, TILE), 0xc4b9a2, { x: BUILD_LINE + 55, y: 0.02 }, 'paving');
 }
 
 function streetPiece(city: CityId): Shape {
   const s = new Shape();
   kerb(s, city, KERB + 0.16, TILE);
   pavement(s, city, KERB + 0.32, BUILD_LINE + 0.6);
+  grime(s, BUILD_LINE, 0xdcd2bd);
   ground(s, city);
-  if (city === 'london') for (const x of [KERB - 0.42, KERB - 0.6]) s.add(G.box(0.08, 0.02, TILE), 0xffd447, { x, y: 0.006 });
+  if (city === 'london') for (const x of [KERB - 0.42, KERB - 0.6]) s.add(G.box(0.08, 0.02, TILE), 0xffd447, { x, y: 0.006 }, 'marking');
   return s;
 }
 
@@ -105,7 +114,7 @@ function bayPiece(city: CityId, entry: boolean): Shape {
   const pts: [number, number][] = entry
     ? [[inner, h], [inner, -h], [outer, -h], [outer, h - taper]]
     : [[inner, h], [inner, -h], [outer, -h + taper], [outer, h]];
-  s.add(G.flat(pts), 0x5b616c, { y: 0.004 });
+  s.add(G.flat(pts), 0x5b616c, { y: 0.004 }, 'asphalt');
   // Kerb along the bay and its taper.
   const straightLen = TILE - taper;
   kerb(s, city, outer + 0.16, straightLen, entry ? -taper / 2 : taper / 2);
@@ -114,14 +123,15 @@ function bayPiece(city: CityId, entry: boolean): Shape {
   kerb(s, city, (inner + outer) / 2 + 0.16, Math.hypot(taper, BAY_DEPTH), tz, entry ? -ang : ang);
   // Pavement behind the bay, plus the wedge beside the taper.
   pavement(s, city, outer + 0.32, BUILD_LINE + 0.6);
+  grime(s, BUILD_LINE, 0xdcd2bd);
   const wedge: [number, number][] = entry
     ? [[inner + 0.2, h], [outer + 0.32, h - taper - 0.1], [outer + 0.32, h]]
     : [[inner + 0.2, -h], [outer + 0.32, -h], [outer + 0.32, -h + taper + 0.1]];
-  s.add(G.flat(wedge), 0xdcd2bd, { y: 0.16 });
+  s.add(G.flat(wedge), 0xdcd2bd, { y: 0.16 }, 'paving');
   ground(s, city);
   // Yellow bay markings: a dashed line along the lane and the bay outline.
-  for (let z = -h + 0.5; z < h; z += 1.6) s.add(G.box(0.14, 0.02, 0.9), 0xffd447, { x: inner + 0.12, y: 0.012, z });
-  s.add(G.box(0.14, 0.02, Math.abs(far - near) + taper), 0xffd447, { x: outer - 0.2, y: 0.012, z: (near + far) / 2 });
+  for (let z = -h + 0.5; z < h; z += 1.6) s.add(G.box(0.14, 0.02, 0.9), 0xffd447, { x: inner + 0.12, y: 0.012, z }, 'marking');
+  s.add(G.box(0.14, 0.02, Math.abs(far - near) + taper), 0xffd447, { x: outer - 0.2, y: 0.012, z: (near + far) / 2 }, 'marking');
   return s;
 }
 
@@ -130,15 +140,15 @@ function waterPiece(city: CityId): Shape {
   kerb(s, city, KERB + 0.16, TILE);
   pavement(s, city, KERB + 0.32, 8.7);
   s.merge(P.railing(TILE, C.ink), { x: 8.45, ry: Math.PI / 2 });
-  s.add(G.rbox(0.8, 3.4, TILE, 0.06), 0xb5a88f, { x: 9.1, y: -1.55 });
-  s.add(G.rbox(0.9, 0.16, TILE, 0.04), 0xd6cbb4, { x: 9.1, y: 0.1 });
+  s.add(G.rbox(0.8, 3.4, TILE, 0.06), 0xb5a88f, { x: 9.1, y: -1.55 }, 'stone');
+  s.add(G.rbox(0.9, 0.16, TILE, 0.04), 0xd6cbb4, { x: 9.1, y: 0.1 }, 'stone');
   return s;
 }
 
 function bridgePiece(): Shape {
-  const s = new Shape();
+  const s = new Shape('metal');
   kerb(s, 'london', KERB + 0.16, TILE);
-  s.add(G.box(BRIDGE_DECK - KERB - 0.3, 0.2, TILE), 0xcfc6b3, { x: (KERB + 0.3 + BRIDGE_DECK) / 2, y: 0.1 });
+  s.add(G.box(BRIDGE_DECK - KERB - 0.3, 0.2, TILE), 0xcfc6b3, { x: (KERB + 0.3 + BRIDGE_DECK) / 2, y: 0.1 }, 'paving');
   s.add(G.rbox(0.6, 3.4, TILE, 0.08), C.bridgeBlue, { x: BRIDGE_DECK + 0.3, y: -1.5 });
   s.add(G.rbox(0.7, 0.18, TILE, 0.05), C.cream, { x: BRIDGE_DECK + 0.3, y: 0.25 });
   for (let z = -TILE / 2 + 1; z < TILE / 2; z += 2) s.add(G.rbox(0.12, 1.1, 0.12, 0.03), C.cream, { x: BRIDGE_DECK + 0.3, y: 0.9, z });
@@ -162,6 +172,10 @@ export class Streets {
   private layout: Layout | null = null;
   private signMaterial: THREE.MeshStandardMaterial | null = null;
   private drift = 0;
+  /** Draw distance in metres, from the graphics tier (fog hides the edge). */
+  ahead = 430;
+  /** Buildings cast shadows only on the High tier (they are the most expensive shadow casters). */
+  private buildingShadows = true;
   private readonly stage: Stage;
 
   constructor(stage: Stage) {
@@ -215,13 +229,14 @@ export class Streets {
       buildings[k] = Array.from({ length: variants }, (_, v) => {
         const art = BUILDERS[k](mulberry32(hashString(`${k}:${v}`)));
         const id = `b:${k}:${v}`;
-        // Buildings receive shadows but do not cast them: the kit's art keeps shadows short and local.
-        S.kind(id, art.shape.build(), matte(), 26, 'receive');
+        S.kind(id, art.shape.build(), matte(), 26, this.buildingShadows ? 'both' : 'receive');
         return { id, art };
       });
     }
     // Props.
     for (let v = 0; v < 3; v++) reg(`tree${v}`, P.treeRound(v * 17 + 3, 0.95 + v * 0.08), 90);
+    // Soft shadow under each tree's crown, so trees beyond the sun's shadow map still sit on the pavement.
+    S.kind('treeblob', blobGeometry.clone(), blobMaterial(0.32), 90, 'none');
     reg('bin', P.bin(), 40, 'satin');
     reg('planter', P.planter(4), 50, 'satin');
     reg('railing', P.railing(TILE), 30, 'satin');
@@ -232,6 +247,11 @@ export class Streets {
     reg('bollard', P.bollard(), 80, 'satin');
     reg('phonebox', P.phoneBox(), 10, 'satin');
     reg('postbox', P.postBox(), 10, 'satin');
+    // Brick boundary wall that closes a gap between buildings; stretched to fit (its bricks are drawn in world space).
+    const wall = new Shape('brick');
+    wall.add(G.box(1, 3.1, 0.4), 0xb4583a, { y: 1.55 });
+    wall.add(G.box(1, 0.16, 0.5), 0xd9cdb6, { y: 3.15 }, 'stone');
+    S.kind('gapwall', wall.build(), matte(), 40, 'receive');
     // Standing people on the pavements.
     const looks = crowdLooks(city, 12);
     looks.forEach((look, i) => reg(`idle${i}`, makePerson(look), 40, 'matte', 'cast'));
@@ -274,7 +294,7 @@ export class Streets {
     const layout = this.layout;
     if (!layout || !this.kit) return;
     const first = Math.floor((dist - BEHIND) / TILE);
-    const last = Math.floor((dist + AHEAD) / TILE);
+    const last = Math.floor((dist + this.ahead) / TILE);
     for (const [i, handles] of this.tiles) {
       if (i >= first && i <= last) continue;
       for (const h of handles) this.scatter.remove(h);
@@ -282,7 +302,7 @@ export class Streets {
     }
     for (let i = first; i <= last; i++) if (!this.tiles.has(i)) this.tiles.set(i, this.buildTile(i, layout, this.kit));
     // Landmarks within view.
-    const wanted = layout.landmarksIn(dist - 260, dist + AHEAD + 260);
+    const wanted = layout.landmarksIn(dist - 260, dist + this.ahead + 260);
     const keys = new Set(wanted.map((w) => w.key));
     for (const [k, m] of this.landmarks) if (!keys.has(k)) {
       m.removeFromParent();
@@ -364,17 +384,25 @@ export class Streets {
   private buildings(put: (id: string, m: THREE.Matrix4, cell?: Cell) => void, theme: Theme, sign: -1 | 1, d0: number, rng: Rng, kit: CityKit): void {
     const choices = THEME_BUILDINGS[theme];
     if (choices.length === 0) return;
-    let cursor = rng() * 1.5;
-    let guard = 0;
-    while (cursor < TILE - 4 && guard++ < 6) {
-      const k = weightedPick(choices, rng);
-      const variants = k ? kit.buildings[k] : undefined;
-      if (!variants || variants.length === 0) break;
-      const v = pick(variants, rng);
+    const ry = -sign * (Math.PI / 2);
+    // Buildings never cross into the next tile, so neighbouring tiles cannot overlap; a brick wall closes any gap.
+    let cursor = rng() < 0.5 ? 0 : 0.4;
+    for (let guard = 0; guard < 8 && cursor < TILE - 0.8; guard++) {
+      const room = TILE - cursor;
+      let chosen: { id: string; art: BuildingArt } | null = null;
+      for (let tries = 0; tries < 5 && !chosen; tries++) {
+        const k = weightedPick(choices, rng);
+        const variants = k ? kit.buildings[k] : undefined;
+        const v = variants && variants.length ? pick(variants, rng) : undefined;
+        if (v && v.art.w <= room) chosen = v;
+      }
+      if (!chosen) {
+        put('gapwall', at(sign * (BUILD_LINE + 0.3), 0, d0 + cursor + room / 2, ry, room - 0.05, 1, 1));
+        break;
+      }
+      const v = chosen;
       const w = v.art.w;
-      if (cursor + w > TILE + 4) break;
       const centre = d0 + cursor + w / 2;
-      const ry = -sign * (Math.PI / 2);
       const m = at(sign * BUILD_LINE, 0, centre, ry).clone();
       put(v.id, m);
       for (const slot of v.art.signs) {
@@ -383,7 +411,7 @@ export class Streets {
         const local = new THREE.Matrix4().compose(new THREE.Vector3(slot.x, slot.y, slot.z), new THREE.Quaternion(), new THREE.Vector3(slot.w, slot.h, 1));
         put('sign', m.clone().multiply(local), cell);
       }
-      cursor += w + (rng() < 0.3 ? 0.6 + rng() * 1.2 : 0.05);
+      cursor += w + 0.02;
     }
   }
 
@@ -391,7 +419,10 @@ export class Streets {
     const x = (o: number): number => sign * o;
     const z = (o: number): number => d0 + o;
     const face = sign > 0 ? -Math.PI / 2 : Math.PI / 2;
-    const tree = (o: number, xo = 8.6): void => put(`tree${Math.floor(rng() * 3)}`, at(x(xo), 0.16, z(o), rng() * 6));
+    const tree = (o: number, xo = 8.6): void => {
+      put(`tree${Math.floor(rng() * 3)}`, at(x(xo), 0.16, z(o), rng() * 6));
+      put('treeblob', at(x(xo) + 0.6, 0.17, z(o) + 0.4, 0, 3.6, 1, 3.4));
+    };
     switch (theme) {
       case 'london-street':
       case 'london-quay':
@@ -416,6 +447,12 @@ export class Streets {
 
   private idlePerson(put: (id: string, m: THREE.Matrix4) => void, x: number, d: number, rng: Rng, kit: CityKit): void {
     put(`idle${Math.floor(rng() * kit.looks)}`, at(x, 0.16, d, rng() * Math.PI * 2));
+  }
+
+  /** Turn building shadows on or off (graphics tier). */
+  setBuildingShadows(on: boolean): void {
+    this.buildingShadows = on;
+    this.scatter.setCastShadow((id) => id.startsWith('b:') || id === 'gapwall', on);
   }
 
   /** Draw-call count for profiling. */

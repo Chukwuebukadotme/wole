@@ -12,6 +12,8 @@ export interface Framing {
   /** 0–1 share of top speed, for the speed-up effect. */
   readonly rush: number;
   readonly shake: number;
+  /** Forward acceleration, m/s²: the camera trails a little on take-off and closes in under braking. */
+  readonly accel?: number;
 }
 
 export class ChaseCamera {
@@ -20,6 +22,9 @@ export class ChaseCamera {
   private fov = 60;
   private orbit = 0.6;
   private readonly look = new THREE.Vector3();
+  /** Damped offset along the road from acceleration. */
+  private lag = 0;
+  private lagV = 0;
   reduceMotion = false;
 
   /** Jump straight to the target framing (no easing), e.g. at the start of a drive. */
@@ -56,7 +61,11 @@ export class ChaseCamera {
     } else {
       const back = scale * 2.45 + 3.6;
       const up = scale * 1.12 + 2.3;
-      cam.position.set(this.x * 0.86, up, back);
+      // Trail a little when pulling away and close in when braking, on a soft spring.
+      const want = this.reduceMotion ? 0 : clamp((f.accel ?? 0) * 0.12, -1.2, 0.8);
+      this.lagV += (30 * (want - this.lag) - 9 * this.lagV) * Math.min(dt, 0.05);
+      this.lag += this.lagV * Math.min(dt, 0.05);
+      cam.position.set(this.x * 0.86, up, back + this.lag);
       this.look.set(this.x * 0.9, f.h * 0.35, -(scale * 2.1 + 7));
       // Keep the three lanes in view on narrow phones.
       const minHFov = 44;
@@ -70,9 +79,12 @@ export class ChaseCamera {
       cam.updateProjectionMatrix();
     }
     if (f.shake > 0 && !this.reduceMotion) {
-      const s = f.shake * 0.35;
-      cam.position.x += (Math.random() - 0.5) * s;
-      cam.position.y += (Math.random() - 0.5) * s;
+      // A short jolt on impact that dies away quickly: smooth wobble rather than random jitter.
+      const t = performance.now() * 0.001;
+      const s = f.shake * f.shake * 0.45;
+      cam.position.x += Math.sin(t * 47) * s;
+      cam.position.y += Math.sin(t * 61 + 1.3) * s * 0.7;
+      cam.position.z += f.shake * 0.5;
     }
     cam.lookAt(this.look);
   }

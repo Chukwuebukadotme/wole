@@ -168,6 +168,14 @@ button {
 .seg button[aria-pressed='true'] {
   background: var(--yellow);
 }
+.seg.four {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.seg.four button {
+  border: 2px solid rgba(20, 43, 78, 0.15);
+  font-size: 12px;
+}
 .linkbtn {
   font-size: 12px;
   text-transform: uppercase;

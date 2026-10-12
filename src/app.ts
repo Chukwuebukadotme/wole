@@ -17,7 +17,9 @@ import { Hud } from './ui/hud.ts';
 import { endHtml, garageHtml, homeHtml, howtoHtml, modalHtml, passengersHtml, pauseHtml, resultsHtml, settingsHtml, setupHtml, shareHtml, Screens, type ResultsModel } from './ui/screens.ts';
 import { canvasBlob, drawShareCard, shareNative } from './ui/share.ts';
 import { Layout, LANES } from './world/layout.ts';
-import { Stage } from './world/stage.ts';
+import { Stage, TIERS, type Quality } from './world/stage.ts';
+import { setReflections, setSurfaceDetail } from './art/surfaces.ts';
+import { Blobs } from './world/blobs.ts';
 import { Streets } from './world/streets.ts';
 
 type State = 'loading' | 'home' | 'menu' | 'garage' | 'drive' | 'paused' | 'resuming' | 'end' | 'results' | 'share';
@@ -61,6 +63,8 @@ export class App {
   private readonly hud = new Hud();
   private readonly screens: Screens;
   private readonly thumbs: Thumbnails;
+  /** Contact shadows under the player, traffic and people. */
+  private readonly blobs = new Blobs();
   save: SaveData;
   private saveOk = true;
   state: State = 'loading';
@@ -88,13 +92,15 @@ export class App {
     this.stage = new Stage(host);
     this.streets = new Streets(this.stage);
     this.crowd = new Crowd(this.stage.world);
-    this.stage.world.add(this.traffic.group);
+    this.stage.world.add(this.traffic.group, this.blobs.mesh);
     this.stage.scene.add(this.player.group);
     this.thumbs = new Thumbnails(this.stage.renderer);
     this.screens = new Screens(byId('screens'), (a, v, el) => this.action(a, v, el), (id, v, el) => this.input(id, v, el));
     this.save = this.load();
     this.today = dailyDrive(dayKey(new Date()));
     this.applyMotion();
+    const g = this.save.settings.graphics;
+    this.applyQuality(g === 'auto' ? Stage.autoQuality() : g);
     this.sound.setLevels(this.save.settings.music, this.save.settings.sfx);
     window.addEventListener('resize', () => this.stage.resize());
     this.stage.resize();
@@ -285,7 +291,7 @@ export class App {
 
   private renderSettings(): void {
     const s = this.save.settings;
-    this.screens.show('settings', settingsHtml({ music: s.music, sfx: s.sfx, reducedMotion: s.reducedMotion, inDrive: this.menuReturn === 'pause' }));
+    this.screens.show('settings', settingsHtml({ music: s.music, sfx: s.sfx, reducedMotion: s.reducedMotion, graphics: s.graphics, inDrive: this.menuReturn === 'pause' }));
   }
 
   // ---------- Actions from screens ----------
@@ -353,6 +359,14 @@ export class App {
         if (this.menuReturn === 'home') this.state = 'menu';
         this.renderSettings();
         break;
+      case 'graphics': {
+        const g = v === 'high' || v === 'medium' || v === 'low' ? v : 'auto';
+        s.settings.graphics = g;
+        this.persist();
+        this.applyQuality(g === 'auto' ? Stage.autoQuality() : g);
+        this.renderSettings();
+        break;
+      }
       case 'motion':
         s.settings.reducedMotion = !s.settings.reducedMotion;
         this.persist();
@@ -755,20 +769,65 @@ export class App {
 
   // ---------- Frame loop ----------
   private loop(now: number): void {
-    const dt = Math.min(0.05, (now - this.lastTime) / 1000);
+    const interval = now - this.lastTime;
+    const dt = Math.min(0.05, interval / 1000);
     this.lastTime = now;
+    const t0 = performance.now();
     try {
       this.frame(dt);
     } catch (err) {
       console.error(err);
     }
+    // Frame timings for profiling (?debug): main-thread work and time between frames.
+    const p = this.timings;
+    p.work[p.i % 240] = performance.now() - t0;
+    p.gap[p.i % 240] = interval;
+    p.i++;
     requestAnimationFrame((t) => this.loop(t));
   }
+  private readonly timings = { i: 0, work: new Array<number>(240).fill(0), gap: new Array<number>(240).fill(0) };
 
-  /** Watch the frame rate while driving; drop to lighter rendering if the device is struggling. */
+  /** Profiling summary for ?debug tests: frame work and spacing, draw calls, triangles and GPU memory counts. */
+  perfStats(): Record<string, number> {
+    const n = Math.min(240, this.timings.i);
+    const pick = (a: number[]): number[] => a.slice(0, n).sort((x, y) => x - y);
+    const work = pick(this.timings.work);
+    const gap = pick(this.timings.gap);
+    const avg = (a: number[]): number => a.reduce((s, v) => s + v, 0) / Math.max(1, a.length);
+    const pct = (a: number[], q: number): number => a[Math.min(a.length - 1, Math.floor(a.length * q))] ?? 0;
+    const info = this.stage.renderer.info;
+    return {
+      frames: n,
+      workAvgMs: +avg(work).toFixed(2),
+      workP95Ms: +pct(work, 0.95).toFixed(2),
+      gapAvgMs: +avg(gap).toFixed(1),
+      gapP95Ms: +pct(gap, 0.95).toFixed(1),
+      calls: info.render.calls,
+      triangles: info.render.triangles,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+      programs: info.programs?.length ?? 0,
+    };
+  }
+
+  /** Clear the frame-time samples (start a fresh measurement). */
+  perfReset(): void {
+    this.timings.i = 0;
+  }
+
+  /** Apply a graphics tier everywhere it matters. */
+  applyQuality(q: Quality): void {
+    this.stage.setQuality(q);
+    this.streets.ahead = TIERS[q].ahead;
+    setSurfaceDetail(TIERS[q].detail);
+    setReflections(null, q !== 'low');
+    this.streets.setBuildingShadows(q === 'high');
+  }
+
+  /** Watch the frame rate while driving on Auto; step down a tier at a time if the device is struggling. */
   private perf = { t: 0, frames: 0, slow: 0 };
   private watchPerformance(dt: number): void {
-    if (this.stage.quality === 'low' || this.state !== 'drive' || params.has('debug')) return;
+    if (this.save.settings.graphics !== 'auto' || this.stage.quality === 'low' || this.state !== 'drive' || params.has('debug')) return;
     const p = this.perf;
     p.t += dt;
     p.frames++;
@@ -778,8 +837,8 @@ export class App {
     p.t = 0;
     p.frames = 0;
     if (p.slow >= 2) {
-      this.stage.quality = 'low';
-      this.stage.lighten();
+      p.slow = 0;
+      this.applyQuality(this.stage.quality === 'high' ? 'medium' : 'low');
     }
   }
 
@@ -794,13 +853,10 @@ export class App {
       }
       const running = this.state === 'drive' || this.state === 'end';
       if (running) {
-        d.gas = this.gasSources.size > 0;
-        d.brake = this.brakeSources.size > 0;
-        const before = d.x;
-        d.update(dt);
-        const lateral = (d.x - before) / Math.max(dt, 1e-3);
-        this.player.update(dt, d.speed, lateral, d.accel / Math.max(dt, 1e-3), d.phase === 'stopped', reduce);
+        this.simulate(d, dt);
+        this.player.update(dt, { speed: d.speed, vx: d.vx, ax: d.ax, accel: d.longAccel, doorOpen: d.doorOpen, reduceMotion: reduce });
         this.sound.engine(d.speed / d.setup.vehicle.top, d.gas, d.setup.vehicle.style);
+        this.sound.brakes(d.brake && d.speed > 3 ? Math.min(1, -d.longAccel / d.setup.vehicle.brake) : 0);
       }
       this.player.group.position.set(d.x, 0, 0);
       this.player.group.visible = !(d.invuln > 0 && Math.floor(d.invuln * 10) % 2 === 1);
@@ -808,7 +864,7 @@ export class App {
       this.streets.update(d.dist, dt);
       this.crowd.update(running ? dt : 0, reduce);
       const v = d.setup.vehicle;
-      this.cam.update(this.stage.camera, dt, { x: d.x, l: v.l, h: v.h, rush: d.gas ? clamp((d.speed - v.cruise) / (v.top - v.cruise), 0, 1) : 0, shake: d.shake });
+      this.cam.update(this.stage.camera, dt, { x: d.x, l: v.l, h: v.h, rush: d.gas ? clamp((d.speed - v.cruise) / (v.top - v.cruise), 0, 1) : 0, shake: d.shake, accel: running ? d.longAccel : 0 });
       this.renderHud(d);
       this.hud.tick(running ? dt : 0);
       if (running) this.checkEnd(d, dt);
@@ -824,17 +880,34 @@ export class App {
       }
       this.player.group.position.set(this.show.x, 0, 0);
       this.player.group.visible = true;
-      this.player.update(dt, speed, 0, 0, false, reduce);
+      this.player.update(dt, { speed, vx: 0, ax: 0, accel: 0, doorOpen: false, reduceMotion: reduce });
       this.crowd.update(dt, reduce);
       this.stage.follow(this.show.dist, this.show.x, dt);
       this.cam.update(this.stage.camera, dt, { x: this.show.x, l: def.l, h: def.h, rush: 0, shake: 0 });
     }
+    this.contactShadows();
     this.stage.render();
     if (this.wantShot) {
       this.wantShot = false;
       this.shot = this.capture();
     }
   }
+
+  /**
+   * Advance the drive in fixed 1/120 s steps, whatever the frame rate, so speed, braking distance, lane changes and
+   * collisions behave the same at 30 and 60 frames a second.
+   */
+  private simulate(d: Drive, dt: number): void {
+    const STEP = 1 / 120;
+    d.gas = this.gasSources.size > 0;
+    d.brake = this.brakeSources.size > 0;
+    this.simAcc = Math.min(this.simAcc + dt, 0.25);
+    while (this.simAcc >= STEP) {
+      d.update(STEP);
+      this.simAcc -= STEP;
+    }
+  }
+  private simAcc = 0;
 
   /** The drive has ended: let it roll a moment, take a picture for the share card, then show the result. */
   private checkEnd(d: Drive, dt: number): void {
@@ -847,6 +920,20 @@ export class App {
       this.hud.show(false);
       this.screens.show('end', endHtml({ complete: d.ended === 'complete', amount: money(d.eco, d.money) }));
     }
+  }
+
+  /** Contact shadows for everything that moves, placed in the world's frame. */
+  private contactShadows(): void {
+    const b = this.blobs;
+    b.begin();
+    const d = this.drive;
+    const def = d ? d.setup.vehicle : VEHICLES[this.vehicle()];
+    const dist = d ? d.dist : this.show.dist;
+    const x = d ? d.x : this.show.x;
+    if (this.player.group.visible || d) b.add(x, dist, 0, def.w * 1.3, def.l * 1.12);
+    for (const c of this.traffic.cars) if (!c.flung) b.add(c.x, c.d, 0, c.w * 1.3, c.l * 1.12, c.mesh.rotation.y);
+    for (const p of this.crowd.people) b.add(p.x, p.d, 0.16, 0.75, 0.75);
+    b.end();
   }
 
   /** Small JPEG of the current frame for the share card. */
@@ -906,9 +993,7 @@ export class App {
   private frameSim(dt: number): void {
     const d = this.drive;
     if (!d || (this.state !== 'drive' && this.state !== 'end')) return;
-    d.gas = this.gasSources.size > 0;
-    d.brake = this.brakeSources.size > 0;
-    d.update(dt);
+    this.simulate(d, dt);
     this.checkEnd(d, dt);
     this.stage.follow(d.dist, d.x, dt);
     this.streets.update(d.dist, dt);
